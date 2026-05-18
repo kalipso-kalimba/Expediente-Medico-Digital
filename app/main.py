@@ -898,10 +898,12 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: st
             links_raw = conn.execute(
                 """
                 SELECT l.*, p.full_name AS patient_name, p.identification,
-                       e.id AS encounter_id, e.created_at AS completed_at
+                       e.id AS encounter_id, e.created_at AS completed_at,
+                       u.username AS doctor_username
                 FROM links l
                 LEFT JOIN patients p ON l.patient_id = p.id
                 LEFT JOIN encounters e ON e.token = l.token
+                LEFT JOIN users u ON l.doctor_id = u.id
                 WHERE l.created_at >= ? AND l.created_at < ?
                 ORDER BY l.created_at DESC
                 """,
@@ -909,8 +911,11 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: st
             ).fetchall()
             encounters_raw = conn.execute(
                 """
-                SELECT e.id, e.created_at, p.full_name, p.identification
-                FROM encounters e JOIN patients p ON p.id = e.patient_id
+                SELECT e.id, e.created_at, p.full_name, p.identification,
+                       u.username AS doctor_username
+                FROM encounters e
+                JOIN patients p ON p.id = e.patient_id
+                LEFT JOIN users u ON e.doctor_id = u.id
                 WHERE e.created_at >= ? AND e.created_at < ?
                 ORDER BY e.created_at DESC
                 """,

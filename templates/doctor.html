@@ -38,7 +38,7 @@
     <h2>Enlaces recientes</h2>
     <div class="tablewrap">
       <table>
-        <tr><th>Enlace</th><th>Creado</th><th>Vence</th><th>Estado</th><th>Completado</th><th>Acciones</th></tr>
+        <tr><th>Enlace</th><th>Creado</th><th>Vence</th><th>Estado</th><th>Completado</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
         {% for link in links %}
         <tr>
           <td><a href="/patient/{{ link.token }}" class="copy-source">{{ base_url }}/patient/{{ link.token }}</a></td>
@@ -46,6 +46,7 @@
           <td>{{ link.expires_at[:10] }}</td>
           <td><span class="status">{{ link.status_es }}</span></td>
           <td>{{ link.completed_at[:16].replace('T', ' ') if link.completed_at else "-" }}</td>
+          {% if user.role == 'admin' %}<td><small>{{ link.doctor_username or 'Admin' }}</small></td>{% endif %}
           <td class="actions">
             <button type="button" class="small secondary" data-copy="{{ base_url }}/patient/{{ link.token }}">Copiar enlace</button>
             <form method="post" action="/doctor/links/{{ link.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea borrar este enlace? El paciente ya no podra acceder al formulario mediante este enlace.">
@@ -68,13 +69,14 @@
     <h2>Formularios completados hoy</h2>
     <div class="tablewrap">
       <table>
-        <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th><th>Acciones</th></tr>
+        <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
         {% for item in encounters %}
         <tr>
           <td>{{ item.full_name }}<br><small>{{ item.identification }}</small></td>
           <td>{{ item.created_at[:16].replace('T', ' ') }}</td>
           <td>PDF generado</td>
           <td>Frontal y trasera cargadas</td>
+          {% if user.role == 'admin' %}<td><small>{{ item.doctor_username or 'Admin' }}</small></td>{% endif %}
           <td class="actions">
             <a class="buttonlink" href="/doctor/encounters/{{ item.id }}">Ver detalle</a>
             <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/pdf">Descargar PDF</a>
