@@ -17,6 +17,6 @@ services:
       - key: APP_COOKIE_SECURE
         value: "true"
       - key: BASE_URL
-        value: https://formulariodigital.onrender.com
+        value: https://expediente-medico-digital.onrender.com
       - key: TSE_LOOKUP_ENABLED
         value: "false"

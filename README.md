@@ -28,7 +28,7 @@ Cambie estos valores en producción usando variables de entorno.
 | `DOCTOR_USERNAME` | Usuario del médico | `doctor` |
 | `DOCTOR_PASSWORD` | Contraseña del médico | `Cambiar123!` |
 | `APP_COOKIE_SECURE` | Cookies seguras (true en HTTPS) | `true` |
-| `BASE_URL` | URL pública del sitio | `https://formulariodigital.onrender.com` |
+| `BASE_URL` | URL pública del sitio | `https://expediente-medico-digital.onrender.com` |
 | `TSE_LOOKUP_ENABLED` | Consulta automática al TSE | `false` |
 
 ## Despliegue en Render
@@ -66,7 +66,7 @@ Opción 2 — Web Service (manual):
 | `DOCTOR_USERNAME` | `doctor` |
 | `DOCTOR_PASSWORD` | Una contraseña segura |
 | `APP_COOKIE_SECURE` | `true` |
-| `BASE_URL` | `https://formulariodigital.onrender.com` |
+| `BASE_URL` | `https://expediente-medico-digital.onrender.com` |
 | `TSE_LOOKUP_ENABLED` | `false` |
 
 ### Limitaciones de Render Free
