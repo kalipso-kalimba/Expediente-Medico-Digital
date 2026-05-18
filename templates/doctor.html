@@ -18,6 +18,8 @@
   </form>
 </header>
 
+{% if success_message %}<p class="success">{{ success_message }}</p>{% endif %}
+
 <nav class="tabs">
   <a class="buttonlink" href="/doctor">Panel principal</a>
   <a class="buttonlink" href="/doctor/patients/search">Consultar paciente</a>

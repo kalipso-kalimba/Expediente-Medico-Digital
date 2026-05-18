@@ -40,6 +40,8 @@ h1, h2 { margin: 0 0 10px; }
 .empty { color: var(--muted); font-weight: 700; margin: 16px 0 0; }
 .hero .muted, .hero p { color: #eaf8fc; }
 .error { color: var(--danger); font-weight: 700; }
+.success { color: #1a7d36; font-weight: 700; }
+.warning { color: #b8860b; font-weight: 700; }
 
 .grid { display: grid; gap: 16px; }
 .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }

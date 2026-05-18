@@ -48,6 +48,7 @@ DOCTOR_PASSWORD = os.getenv("DOCTOR_PASSWORD", "")
 COOKIE_SECURE = os.getenv("APP_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 TSE_LOOKUP_ENABLED = os.getenv("TSE_LOOKUP_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
+DEFAULT_PASSWORD = "usuariodoctor"
 SESSION_COOKIE = "doctor_session"
 CSRF_COOKIE = "csrf_token"
 TSE_RATE_LIMIT: dict[str, list[float]] = {}
@@ -67,23 +68,30 @@ def ensure_dirs() -> None:
 
 def migrate_admin() -> None:
     with db() as conn:
-        existing = conn.execute("SELECT id, role, is_active FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()
+        existing = conn.execute("SELECT id, role, is_active, must_change_password FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()
         if not existing and DOCTOR_PASSWORD:
             hashed = passlib_hash.bcrypt.hash(DOCTOR_PASSWORD)
             conn.execute(
-                "INSERT INTO users (username, password_hash, full_name, email, role, is_active, token_version, created_at, updated_at) VALUES (?, ?, ?, ?, 'admin', 1, 1, ?, ?)",
+                "INSERT INTO users (username, password_hash, full_name, email, role, is_active, token_version, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 'admin', 1, 1, 0, ?, ?)",
                 (DOCTOR_USERNAME, hashed, DOCTOR_USERNAME, "", datetime.now().isoformat(), datetime.now().isoformat()),
             )
             logger.info("Admin user created from env vars.")
             admin_id = conn.execute("SELECT id FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()["id"]
         elif existing:
             admin_id = existing["id"]
+            updates = []
             if existing["role"] != "admin" or not existing["is_active"]:
+                updates.append("role = 'admin', is_active = 1")
+            if existing["must_change_password"]:
+                updates.append("must_change_password = 0")
+            if updates:
+                updates.append("updated_at = ?")
+                params = (datetime.now().isoformat(), admin_id)
                 conn.execute(
-                    "UPDATE users SET role = 'admin', is_active = 1, updated_at = ? WHERE id = ?",
-                    (datetime.now().isoformat(), admin_id),
+                    "UPDATE users SET {} WHERE id = ?".format(", ".join(updates)),
+                    params,
                 )
-                logger.info("Admin user '%s' updated to role=admin, is_active=1.", DOCTOR_USERNAME)
+                logger.info("Admin user '%s' updated.", DOCTOR_USERNAME)
         else:
             return
 
@@ -96,7 +104,7 @@ def migrate_admin() -> None:
 def verify_user_password(username: str, password: str) -> dict | None:
     with db() as conn:
         row = conn.execute(
-            "SELECT id, username, password_hash, role, is_active, full_name FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, role, is_active, full_name, must_change_password FROM users WHERE username = ?",
             (username,),
         ).fetchone()
     if not row:
@@ -114,7 +122,7 @@ def verify_user_password(username: str, password: str) -> dict | None:
 def get_user_by_id(user_id: int) -> dict | None:
     with db() as conn:
         row = conn.execute(
-            "SELECT id, username, full_name, email, role, is_active FROM users WHERE id = ?",
+            "SELECT id, username, full_name, email, role, is_active, must_change_password FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
     return dict(row) if row else None
@@ -124,12 +132,12 @@ def hash_password(password: str) -> str:
     return passlib_hash.bcrypt.hash(password)
 
 
-def set_user_password(user_id: int, new_password: str) -> None:
+def set_user_password(user_id: int, new_password: str, must_change: int = 0) -> None:
     hashed = hash_password(new_password)
     with db() as conn:
         conn.execute(
-            "UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = ? WHERE id = ?",
-            (hashed, datetime.now().isoformat(), user_id),
+            "UPDATE users SET password_hash = ?, token_version = token_version + 1, must_change_password = ?, updated_at = ? WHERE id = ?",
+            (hashed, must_change, datetime.now().isoformat(), user_id),
         )
 
 
@@ -248,11 +256,17 @@ def init_db() -> None:
                 role TEXT NOT NULL DEFAULT 'doctor' CHECK(role IN ('admin', 'doctor')),
                 is_active INTEGER NOT NULL DEFAULT 1,
                 token_version INTEGER NOT NULL DEFAULT 0,
+                must_change_password INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT '',
                 updated_at TEXT NOT NULL DEFAULT ''
             )
             """
         )
+        user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "must_change_password" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 1")
+        if "deleted_at" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN deleted_at TEXT")
         doctor_id_links = {row["name"] for row in conn.execute("PRAGMA table_info(links)").fetchall()}
         if "doctor_id" not in doctor_id_links:
             conn.execute("ALTER TABLE links ADD COLUMN doctor_id INTEGER REFERENCES users(id)")
@@ -389,7 +403,7 @@ def current_user(request: Request) -> dict | None:
     if not session:
         return None
     with db() as conn:
-        rows = conn.execute("SELECT id, username, full_name, role, is_active, token_version FROM users").fetchall()
+        rows = conn.execute("SELECT id, username, full_name, role, is_active, token_version, must_change_password FROM users").fetchall()
     for row in rows:
         if not row["is_active"]:
             continue
@@ -400,10 +414,18 @@ def current_user(request: Request) -> dict | None:
     return None
 
 
-def require_doctor(request: Request) -> dict:
+def require_doctor_skip_force(request: Request) -> dict:
+    """Checks auth only, does not check must_change_password."""
     user = current_user(request)
     if not user:
         raise HTTPException(status_code=303, headers={"Location": "/login"})
+    return user
+
+
+def require_doctor(request: Request) -> dict:
+    user = require_doctor_skip_force(request)
+    if user.get("must_change_password"):
+        raise HTTPException(status_code=303, headers={"Location": "/doctor/force-change-password"})
     return user
 
 
@@ -796,6 +818,42 @@ def logout(request: Request, csrf_token: str = Form(...)) -> RedirectResponse:
     return response
 
 
+@app.get("/doctor/force-change-password", response_class=HTMLResponse)
+def force_change_password_form(request: Request, user: dict = Depends(require_doctor_skip_force)) -> HTMLResponse:
+    if not user.get("must_change_password"):
+        return RedirectResponse("/doctor", status_code=303)
+    return template_with_csrf(request, "change_password.html", {"request": request, "error": None, "success": None, "force": True})
+
+
+@app.post("/doctor/force-change-password")
+def force_change_password(
+    request: Request,
+    user: dict = Depends(require_doctor_skip_force),
+    csrf_token: str = Form(...),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+) -> Response:
+    validate_csrf(request, csrf_token)
+    if not user.get("must_change_password"):
+        return RedirectResponse("/doctor", status_code=303)
+    error = None
+    if not verify_user_password(user["username"], current_password):
+        error = "La contrasena actual no es correcta."
+    elif new_password != confirm_password:
+        error = "La nueva contrasena y la confirmacion no coinciden."
+    elif not new_password or len(new_password) < 8:
+        error = "La nueva contrasena debe tener al menos 8 caracteres."
+    elif new_password == DEFAULT_PASSWORD:
+        error = "La nueva contrasena no puede ser la contrasena provisional."
+    if error:
+        return template_with_csrf(request, "change_password.html", {"request": request, "error": error, "success": None, "force": True})
+    set_user_password(user["id"], new_password, must_change=0)
+    response = RedirectResponse("/doctor?msg=password_updated", status_code=303)
+    set_private_cookie(response, SESSION_COOKIE, session_value(user["id"]))
+    return response
+
+
 @app.get("/doctor/change-password", response_class=HTMLResponse)
 def change_password_form(request: Request, _: dict = Depends(require_doctor)) -> HTMLResponse:
     return template_with_csrf(request, "change_password.html", {"request": request, "error": None, "success": None})
@@ -820,16 +878,18 @@ def change_password(
         error = "La nueva contrasena debe tener al menos 8 caracteres."
     elif new_password == current_password:
         error = "La nueva contrasena no puede ser igual a la actual."
+    elif new_password == DEFAULT_PASSWORD:
+        error = "La nueva contrasena no puede ser la contrasena provisional."
     if error:
-        return template_with_csrf(request, "change_password.html", {"request": request, "error": error, "success": None})
-    set_user_password(user["id"], new_password)
+        return template_with_csrf(request, "change_password.html", {"request": request, "error": error, "success": None, "force": False})
+    set_user_password(user["id"], new_password, must_change=0)
     response = RedirectResponse("/login?msg=password_changed", status_code=303)
     response.delete_cookie(SESSION_COOKIE)
     return response
 
 
 @app.get("/doctor", response_class=HTMLResponse)
-def doctor_panel(request: Request, user: dict = Depends(require_doctor)) -> HTMLResponse:
+def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: str = "") -> HTMLResponse:
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
@@ -883,11 +943,14 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor)) -> HTML
         d = dict(link)
         d["status_es"] = link_status(link)
         links.append(d)
+    success_message = ""
+    if msg == "password_updated":
+        success_message = "Contrase\u00f1a actualizada correctamente."
     return template_with_csrf(
         request, "doctor.html",
         {"request": request, "links": links, "encounters": encounters_raw, "today": now.date().isoformat(),
          "username": user["username"], "user": user, "base_url": BASE_URL or str(request.base_url).rstrip("/"),
-         "APP_ENV": APP_ENV},
+         "APP_ENV": APP_ENV, "success_message": success_message},
     )
 
 
@@ -1313,8 +1376,8 @@ def share_pdf(encounter_id: int, request: Request, user: dict = Depends(require_
 def users_list(request: Request, _: dict = Depends(require_admin)) -> HTMLResponse:
     with db() as conn:
         users_raw = conn.execute(
-            "SELECT id, username, full_name, email, role, is_active, created_at FROM users ORDER BY id"
-        ).fetchall()
+                "SELECT id, username, full_name, email, role, is_active, must_change_password, deleted_at, created_at FROM users ORDER BY id"
+            ).fetchall()
     return template_with_csrf(
         request, "users_list.html",
         {"request": request, "users": users_raw},
@@ -1333,21 +1396,18 @@ def user_new(
     csrf_token: str = Form(...),
     username: str = Form(...),
     full_name: str = Form(...),
-    password: str = Form(...),
     role: str = Form("doctor"),
 ) -> Response:
     validate_csrf(request, csrf_token)
-    if not username or not password:
-        return template_with_csrf(request, "user_form.html", {"request": request, "user": None, "error": "Usuario y contrasena son requeridos."})
-    if len(password) < 8:
-        return template_with_csrf(request, "user_form.html", {"request": request, "user": None, "error": "La contrasena debe tener al menos 8 caracteres."})
+    if not username:
+        return template_with_csrf(request, "user_form.html", {"request": request, "user": None, "error": "Nombre de usuario es requerido."})
     if role not in ("admin", "doctor"):
         role = "doctor"
-    hashed = hash_password(password)
+    hashed = hash_password(DEFAULT_PASSWORD)
     try:
         with db() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, full_name, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (username, password_hash, full_name, role, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
                 (username, hashed, full_name, role, datetime.now().isoformat(), datetime.now().isoformat()),
             )
     except sqlite3.IntegrityError:
@@ -1392,17 +1452,74 @@ def user_reset_password(
     request: Request,
     _: dict = Depends(require_admin),
     csrf_token: str = Form(...),
-    new_password: str = Form(...),
 ) -> Response:
     validate_csrf(request, csrf_token)
-    if len(new_password) < 8:
-        with db() as conn:
-            users_raw = conn.execute(
-                "SELECT id, username, full_name, email, role, is_active, created_at FROM users ORDER BY id"
-            ).fetchall()
-        return template_with_csrf(
-            request, "users_list.html",
-            {"request": request, "users": users_raw, "error": "La contrasena debe tener al menos 8 caracteres."},
-        )
-    set_user_password(user_id, new_password)
+    set_user_password(user_id, DEFAULT_PASSWORD, must_change=1)
     return RedirectResponse("/doctor/users", status_code=303)
+
+
+@app.post("/doctor/users/{user_id}/suspend")
+def user_suspend(
+    user_id: int,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    csrf_token: str = Form(...),
+) -> Response:
+    validate_csrf(request, csrf_token)
+    if user_id == admin["id"]:
+        return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede suspenderse a si mismo."})
+    with db() as conn:
+        target = conn.execute("SELECT id, role, is_active FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(404, "Usuario no encontrado")
+        if target["role"] == "admin":
+            admins = conn.execute("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND is_active = 1 AND deleted_at IS NULL").fetchone()
+            if admins["cnt"] <= 1:
+                return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede suspender al unico administrador activo."})
+        conn.execute("UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+    return RedirectResponse("/doctor/users", status_code=303)
+
+
+@app.post("/doctor/users/{user_id}/reactivate")
+def user_reactivate(
+    user_id: int,
+    request: Request,
+    _: dict = Depends(require_admin),
+    csrf_token: str = Form(...),
+) -> Response:
+    validate_csrf(request, csrf_token)
+    with db() as conn:
+        target = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(404, "Usuario no encontrado")
+        conn.execute("UPDATE users SET is_active = 1, deleted_at = NULL, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+    return RedirectResponse("/doctor/users", status_code=303)
+
+
+@app.post("/doctor/users/{user_id}/delete")
+def user_delete(
+    user_id: int,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    csrf_token: str = Form(...),
+) -> Response:
+    validate_csrf(request, csrf_token)
+    if user_id == admin["id"]:
+        return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede borrarse a si mismo."})
+    with db() as conn:
+        target = conn.execute("SELECT id, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(404, "Usuario no encontrado")
+        if target["role"] == "admin":
+            admins = conn.execute("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND deleted_at IS NULL").fetchone()
+            if admins["cnt"] <= 1:
+                return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede borrar al unico administrador."})
+        conn.execute("UPDATE users SET is_active = 0, deleted_at = ?, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), datetime.now().isoformat(), user_id))
+    return RedirectResponse("/doctor/users", status_code=303)
+
+
+def _all_users() -> list:
+    with db() as conn:
+        return conn.execute(
+            "SELECT id, username, full_name, email, role, is_active, must_change_password, deleted_at, created_at FROM users ORDER BY id"
+        ).fetchall()

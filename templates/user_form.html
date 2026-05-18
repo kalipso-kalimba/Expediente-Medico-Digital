@@ -15,7 +15,7 @@
     {% if not user %}
     <label>Nombre del m&eacute;dico<input name="full_name" required autocomplete="off"></label>
     <label>Nombre de usuario<input name="username" required autocomplete="off"></label>
-    <label>Contrase&ntilde;a provisional<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+    <p class="muted">La contrase&ntilde;a provisional ser&aacute;: <strong>usuariodoctor</strong>. El usuario deber&aacute; cambiarla en el primer inicio de sesi&oacute;n.</p>
     {% endif %}
     {% if user %}
     <label>Nombre del m&eacute;dico<input name="full_name" value="{{ user.full_name }}"></label>
