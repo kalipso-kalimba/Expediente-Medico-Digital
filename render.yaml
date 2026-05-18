@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: expediente-medico-digital
+    runtime: python
+    repo: https://github.com/kalipso-kalimba/Expediente-Medico-Digital
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: DOCTOR_USERNAME
+        value: doctor
+      - key: DOCTOR_PASSWORD
+        value: Cambiar123!
+      - key: APP_COOKIE_SECURE
+        value: "true"
+      - key: BASE_URL
+        value: https://formulariodigital.onrender.com
+      - key: TSE_LOOKUP_ENABLED
+        value: "false"
+      - key: PYTHON_VERSION
+        value: "3.12.10"
