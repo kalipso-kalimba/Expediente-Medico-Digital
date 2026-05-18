@@ -3,8 +3,12 @@
 <header class="topbar">
   <div>
     <h1>Expediente Médico Digital</h1>
-    <p class="muted">Genere enlaces unicos y descargue formularios completados.</p>
+    <p class="muted">Bienvenido, {{ user.full_name or user.username }} {% if user.role == 'admin' %}<span class="badge">Admin</span>{% endif %}</p>
   </div>
+  <a class="buttonlink secondary" href="/doctor/change-password">Cambiar contrase&ntilde;a</a>
+  {% if user.role == 'admin' %}
+  <a class="buttonlink secondary" href="/doctor/users">Administrar usuarios</a>
+  {% endif %}
   <form method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="secondary">Salir</button>
@@ -35,7 +39,7 @@
           <td><a href="/patient/{{ link.token }}" class="copy-source">{{ base_url }}/patient/{{ link.token }}</a></td>
           <td>{{ link.created_at[:16].replace('T', ' ') }}</td>
           <td>{{ link.expires_at[:10] }}</td>
-          <td><span class="status">{{ link.status }}</span></td>
+          <td><span class="status">{{ link.status_es }}</span></td>
           <td>{{ link.completed_at[:16].replace('T', ' ') if link.completed_at else "-" }}</td>
           <td class="actions">
             <button type="button" class="small secondary" data-copy="{{ base_url }}/patient/{{ link.token }}">Copiar enlace</button>

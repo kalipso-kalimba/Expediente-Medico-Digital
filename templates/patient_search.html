@@ -3,14 +3,14 @@
 <header class="topbar">
   <div>
     <h1>Consultar paciente</h1>
-    <p class="muted">Busque formularios completados por cedula o DIMEX.</p>
+    <p class="muted">Busque formularios completados por c&eacute;dula, DIMEX, nombre o apellidos.</p>
   </div>
   <a class="buttonlink" href="/doctor">Volver al panel</a>
 </header>
 
 <section class="card">
   <form method="get" action="/doctor/patients/search" class="searchbar">
-    <label>Numero de cedula o DIMEX<input name="identification" value="{{ identification }}" required></label>
+    <label>C&eacute;dula, DIMEX, nombre o apellidos<input name="query" value="{{ query }}" required></label>
     <button>Buscar</button>
   </form>
 </section>
@@ -44,7 +44,7 @@
     </table>
   </div>
   {% else %}
-    <p class="empty">No se encontraron formularios completados para esta identificacion.</p>
+    <p class="empty">No se encontraron formularios completados para la b&uacute;squeda ingresada.</p>
   {% endif %}
 </section>
 {% endif %}

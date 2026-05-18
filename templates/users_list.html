@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Administrar usuarios</h1>
+    <p class="muted">Expediente M&eacute;dico Digital</p>
+  </div>
+  <a class="buttonlink secondary" href="/doctor/users/new">Nuevo usuario</a>
+  <a class="buttonlink" href="/doctor">Volver al panel</a>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="secondary">Salir</button>
+  </form>
+</header>
+
+<section class="card">
+  <div class="tablewrap">
+    <table>
+      <tr>
+        <th>Usuario</th>
+        <th>Nombre completo</th>
+        <th>Email</th>
+        <th>Rol</th>
+        <th>Activo</th>
+        <th>Creado</th>
+        <th>Acciones</th>
+      </tr>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{{ u.full_name }}</td>
+        <td>{{ u.email }}</td>
+        <td>{% if u.role == 'admin' %}Administrador{% else %}M&eacute;dico{% endif %}</td>
+        <td>{{ "S&iacute;" if u.is_active else "No" }}</td>
+        <td>{{ u.created_at[:10] }}</td>
+        <td class="actions">
+          <a class="buttonlink small" href="/doctor/users/{{ u.id }}/edit">Editar</a>
+          <form method="post" action="/doctor/users/{{ u.id }}/reset-password" class="inline-form" data-confirm="Restablecer la contrasena de {{ u.username }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="inline-label">
+              <input type="password" name="new_password" placeholder="Nueva contrasena (min 8 chars)" required minlength="8">
+            </label>
+            <button class="small secondary" type="submit">Restablecer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

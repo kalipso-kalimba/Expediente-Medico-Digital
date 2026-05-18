@@ -70,6 +70,8 @@ button:hover { background: var(--primary-dark); }
 .danger:hover { background: #7d1528; }
 .small { padding: 8px 12px; font-size: .86rem; }
 .inline-form { display: inline-flex; margin: 0; }
+.inline-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.inline-label input { width: auto; }
 .buttonlink {
   display: inline-flex;
   align-items: center;
@@ -83,6 +85,7 @@ button:hover { background: var(--primary-dark); }
 }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .status { display: inline-block; border-radius: 999px; background: #edf6ee; color: #23612d; padding: 5px 9px; font-weight: 800; }
+.badge { display: inline-block; border-radius: 999px; background: #176b87; color: white; padding: 2px 8px; font-size: .72rem; font-weight: 800; text-transform: uppercase; vertical-align: middle; }
 
 .question, fieldset {
   border: 1px solid var(--line);

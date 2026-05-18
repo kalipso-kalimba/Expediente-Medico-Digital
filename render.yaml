@@ -20,3 +20,5 @@ services:
         value: "true"
       - key: TSE_LOOKUP_ENABLED
         value: "false"
+      - key: BASE_URL
+        value: https://expediente-medico-digital.onrender.com

@@ -7,7 +7,7 @@ El sistema funciona en **dos entornos** sincronizados desde un mismo repositorio
 | Entorno | URL | Propósito |
 |---|---|---|
 | **Local** | `http://127.0.0.1:8000` | Pruebas, respaldo, trabajo interno |
-| **Render (en línea)** | `https://formulariodigital.onrender.com` | Acceso desde internet |
+| **Render (en línea)** | `https://expediente-medico-digital.onrender.com` | Acceso desde internet |
 
 ## Requisitos
 
@@ -48,7 +48,7 @@ Abrir `http://127.0.0.1:8000`.
 | `DOCTOR_USERNAME` | `doctor` | `doctor` | Usuario del médico |
 | `DOCTOR_PASSWORD` | `Cambiar123!` | elegir una segura | Contraseña del médico |
 | `APP_COOKIE_SECURE` | `false` | `true` | Cookies seguras (requiere HTTPS) |
-| `BASE_URL` | `http://127.0.0.1:8000` | `https://formulariodigital.onrender.com` | URL para enlaces de pacientes |
+| `BASE_URL` | `http://127.0.0.1:8000` | `https://expediente-medico-digital.onrender.com` | URL para enlaces de pacientes |
 | `TSE_LOOKUP_ENABLED` | `false` | `false` | Consulta automática al TSE |
 
 ## Ejemplo .env para local
@@ -98,7 +98,7 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-all
 | `DOCTOR_USERNAME` | `doctor` |
 | `DOCTOR_PASSWORD` | Una contraseña segura |
 | `APP_COOKIE_SECURE` | `true` |
-| `BASE_URL` | `https://formulariodigital.onrender.com` |
+| `BASE_URL` | `https://expediente-medico-digital.onrender.com` |
 | `TSE_LOOKUP_ENABLED` | `false` |
 
 ### Auto-deploy
@@ -112,7 +112,7 @@ Cada cambio debe seguir este flujo:
 1. **Probar localmente**: `uvicorn app.main:app --reload`
 2. **Subir a GitHub**: `git push origin master`
 3. **Render se despliega solo** (si auto-deploy está activo) o **Manual Deploy**
-4. **Verificar en línea**: `https://formulariodigital.onrender.com`
+4. **Verificar en línea**: `https://expediente-medico-digital.onrender.com`
 
 ## Limitaciones de Render Free
 

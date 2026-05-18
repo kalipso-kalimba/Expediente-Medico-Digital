@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
-  <h1>Expediente Médico Digital</h1>
+  <h1>Toma remota de datos b&aacute;sicos para valoraci&oacute;n m&eacute;dica</h1>
   <p>Complete la informacion paso a paso. Los campos condicionales aparecen solo cuando corresponden.</p>
 </section>
 
@@ -149,7 +149,7 @@
     <label>Trasera de cedula o DIMEX<input name="cedula_back" type="file" accept="image/*" capture="environment" required></label>
   </div>
 
-  <label class="declaration"><input type="checkbox" name="truth_declaration" value="accepted" required> Declaro que la informacion proporcionada es correcta, completa y verdadera.</label>
+  <label class="declaration"><input type="checkbox" name="truth_declaration" value="accepted" required> Declaro que los datos suministrados son reales, correctos y completos. Entiendo que esta informaci&oacute;n ser&aacute; revisada, verificada y valorada por el m&eacute;dico antes de cualquier valoraci&oacute;n remota o presencial.</label>
   <button>Enviar formulario</button>
 </form>
 <script src="/static/app.js"></script>
