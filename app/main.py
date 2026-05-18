@@ -67,7 +67,7 @@ def ensure_dirs() -> None:
 
 def migrate_admin() -> None:
     with db() as conn:
-        existing = conn.execute("SELECT id FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()
+        existing = conn.execute("SELECT id, role, is_active FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()
         if not existing and DOCTOR_PASSWORD:
             hashed = passlib_hash.bcrypt.hash(DOCTOR_PASSWORD)
             conn.execute(
@@ -78,6 +78,12 @@ def migrate_admin() -> None:
             admin_id = conn.execute("SELECT id FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()["id"]
         elif existing:
             admin_id = existing["id"]
+            if existing["role"] != "admin" or not existing["is_active"]:
+                conn.execute(
+                    "UPDATE users SET role = 'admin', is_active = 1, updated_at = ? WHERE id = ?",
+                    (datetime.now().isoformat(), admin_id),
+                )
+                logger.info("Admin user '%s' updated to role=admin, is_active=1.", DOCTOR_USERNAME)
         else:
             return
 
@@ -880,7 +886,8 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor)) -> HTML
     return template_with_csrf(
         request, "doctor.html",
         {"request": request, "links": links, "encounters": encounters_raw, "today": now.date().isoformat(),
-         "username": user["username"], "user": user, "base_url": BASE_URL or str(request.base_url).rstrip("/")},
+         "username": user["username"], "user": user, "base_url": BASE_URL or str(request.base_url).rstrip("/"),
+         "APP_ENV": APP_ENV},
     )
 
 
