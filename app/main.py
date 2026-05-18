@@ -403,6 +403,16 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_name: str, back_name: 
     styles = getSampleStyleSheet()
     story = [Paragraph("Informe de formulario medico", styles["Title"]), Spacer(1, 12)]
     story.append(Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Datos aportados al medico por el paciente", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            "La informacion contenida en este documento corresponde a los datos proporcionados "
+            "directamente por el paciente mediante el formulario remoto. Esta informacion debe "
+            "ser revisada y valorada por el medico.",
+            styles["Normal"],
+        )
+    )
     story.append(Spacer(1, 12))
 
     rows = [["Campo", "Respuesta"]]
