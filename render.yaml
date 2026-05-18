@@ -2,7 +2,6 @@ services:
   - type: web
     name: expediente-medico-digital
     runtime: python
-    repo: https://github.com/kalipso-kalimba/Expediente-Medico-Digital
     plan: free
     region: oregon
     buildCommand: pip install -r requirements.txt
@@ -20,5 +19,3 @@ services:
         value: https://formulariodigital.onrender.com
       - key: TSE_LOOKUP_ENABLED
         value: "false"
-      - key: PYTHON_VERSION
-        value: "3.12.10"

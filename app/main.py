@@ -27,6 +27,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.lib import colors
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -459,6 +460,11 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_name: str, back_name: 
     story.append(Paragraph("Observaciones del medico:", styles["Heading2"]))
     story.append(Paragraph("_______________________________________________", styles["Normal"]))
     SimpleDocTemplate(str(pdf_path), pagesize=letter, rightMargin=36, leftMargin=36).build(story)
+
+
+@app.get("/health")
+def health() -> JSONResponse:
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/", response_class=HTMLResponse)
