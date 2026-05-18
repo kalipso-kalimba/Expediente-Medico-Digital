@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Detalle de atencion</h1>
+    <p class="muted">Expediente Medico Digital</p>
+  </div>
+  <a class="buttonlink" href="/doctor">Volver al panel</a>
+</header>
+
+<section class="card">
+  <h2>{{ encounter.full_name }}</h2>
+  <p><strong>Identificacion:</strong> {{ encounter.identification }}</p>
+  <p><strong>Completado:</strong> {{ encounter.created_at[:16].replace('T', ' ') }}</p>
+  <p><strong>Expediente:</strong> {{ encounter.folder_name }}</p>
+  <div class="actions">
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}/pdf">Descargar PDF</a>
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}/share">Compartir PDF</a>
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}/images/front">Ver cedula frontal</a>
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}/images/back">Ver cedula trasera</a>
+    <form method="post" action="/doctor/encounters/{{ encounter.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea eliminar esta atencion? Esta accion eliminara el registro, el PDF y las fotografias asociadas a esta atencion. No se eliminaran otras atenciones del mismo paciente.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="danger">Eliminar atencion</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Formulario completado</h2>
+  <div class="tablewrap">
+    <table>
+      {% for key, value in payload.items() %}
+      <tr>
+        <th>{{ key }}</th>
+        <td>{{ value|join(', ') if value is sequence and value is not string else value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+<script src="/static/app.js"></script>
+{% endblock %}

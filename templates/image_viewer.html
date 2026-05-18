@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Fotografia de identificacion</h1>
+    <p class="muted">Cedula o DIMEX {{ side_label }}</p>
+  </div>
+  <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}">Volver al detalle</a>
+</header>
+
+<section class="card image-card">
+  <h2>{{ encounter.full_name }}</h2>
+  <p><strong>Identificacion:</strong> {{ encounter.identification }}</p>
+  <p><strong>Tipo de imagen:</strong> {{ side_label|capitalize }}</p>
+  <img class="id-image" src="/doctor/encounters/{{ encounter.id }}/images/{{ side }}/raw" alt="Cedula {{ side_label }}">
+  <div class="actions">
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}">Volver al detalle</a>
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}/images/{{ side }}/raw" target="_blank">Abrir imagen</a>
+  </div>
+</section>
+{% endblock %}

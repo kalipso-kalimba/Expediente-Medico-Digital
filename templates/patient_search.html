@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Consultar paciente</h1>
+    <p class="muted">Busque formularios completados por cedula o DIMEX.</p>
+  </div>
+  <a class="buttonlink" href="/doctor">Volver al panel</a>
+</header>
+
+<section class="card">
+  <form method="get" action="/doctor/patients/search" class="searchbar">
+    <label>Numero de cedula o DIMEX<input name="identification" value="{{ identification }}" required></label>
+    <button>Buscar</button>
+  </form>
+</section>
+
+{% if searched %}
+<section class="card">
+  <h2>Resultados</h2>
+  {% if results %}
+  <div class="tablewrap">
+    <table>
+      <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th><th>Acciones</th></tr>
+      {% for item in results %}
+      <tr>
+        <td>{{ item.full_name }}<br><small>{{ item.identification }}</small></td>
+        <td>{{ item.created_at[:16].replace('T', ' ') }}</td>
+        <td>PDF generado</td>
+        <td>Frontal y trasera cargadas</td>
+        <td class="actions">
+          <a class="buttonlink" href="/doctor/encounters/{{ item.id }}">Ver detalle</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/pdf">Descargar PDF</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/share">Compartir PDF</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/images/front">Ver cedula frontal</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/images/back">Ver cedula trasera</a>
+          <form method="post" action="/doctor/encounters/{{ item.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea eliminar esta atencion? Esta accion eliminara el registro, el PDF y las fotografias asociadas a esta atencion. No se eliminaran otras atenciones del mismo paciente.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="small danger">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+    <p class="empty">No se encontraron formularios completados para esta identificacion.</p>
+  {% endif %}
+</section>
+{% endif %}
+<script src="/static/app.js"></script>
+{% endblock %}

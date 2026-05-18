@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Expediente Médico Digital</h1>
+    <p class="muted">Genere enlaces unicos y descargue formularios completados.</p>
+  </div>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="secondary">Salir</button>
+  </form>
+</header>
+
+<nav class="tabs">
+  <a class="buttonlink" href="/doctor">Panel principal</a>
+  <a class="buttonlink" href="/doctor/patients/search">Consultar paciente</a>
+</nav>
+
+<section class="card">
+  <h2>Nuevo enlace para paciente</h2>
+  <form method="post" action="/doctor/links">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button>Generar enlace</button>
+  </form>
+</section>
+
+<section class="grid">
+  <div class="card">
+    <h2>Enlaces recientes</h2>
+    <div class="tablewrap">
+      <table>
+        <tr><th>Enlace</th><th>Creado</th><th>Vence</th><th>Estado</th><th>Completado</th><th>Acciones</th></tr>
+        {% for link in links %}
+        <tr>
+          <td><a href="/patient/{{ link.token }}" class="copy-source">{{ base_url }}/patient/{{ link.token }}</a></td>
+          <td>{{ link.created_at[:16].replace('T', ' ') }}</td>
+          <td>{{ link.expires_at[:10] }}</td>
+          <td><span class="status">{{ link.status }}</span></td>
+          <td>{{ link.completed_at[:16].replace('T', ' ') if link.completed_at else "-" }}</td>
+          <td class="actions">
+            <button type="button" class="small secondary" data-copy="{{ base_url }}/patient/{{ link.token }}">Copiar enlace</button>
+            <form method="post" action="/doctor/links/{{ link.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea borrar este enlace? El paciente ya no podra acceder al formulario mediante este enlace.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="small danger" type="submit">Borrar</button>
+            </form>
+            {% if link.encounter_id %}
+              <a class="buttonlink" href="/doctor/encounters/{{ link.encounter_id }}">Ver detalle</a>
+              <a class="buttonlink" href="/doctor/encounters/{{ link.encounter_id }}/pdf">Descargar PDF</a>
+              <a class="buttonlink" href="/doctor/encounters/{{ link.encounter_id }}/share">Compartir PDF</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Formularios completados hoy</h2>
+    <div class="tablewrap">
+      <table>
+        <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th><th>Acciones</th></tr>
+        {% for item in encounters %}
+        <tr>
+          <td>{{ item.full_name }}<br><small>{{ item.identification }}</small></td>
+          <td>{{ item.created_at[:16].replace('T', ' ') }}</td>
+          <td>PDF generado</td>
+          <td>Frontal y trasera cargadas</td>
+          <td class="actions">
+            <a class="buttonlink" href="/doctor/encounters/{{ item.id }}">Ver detalle</a>
+            <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/pdf">Descargar PDF</a>
+            <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/share">Compartir PDF</a>
+            <form method="post" action="/doctor/encounters/{{ item.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea eliminar esta atencion? Esta accion eliminara el registro, el PDF y las fotografias asociadas a esta atencion. No se eliminaran otras atenciones del mismo paciente.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="small danger">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% if not encounters %}
+        <p class="empty">No hay formularios completados el dia de hoy.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+<script src="/static/app.js"></script>
+{% endblock %}

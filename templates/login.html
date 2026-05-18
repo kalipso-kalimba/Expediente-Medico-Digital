@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>Expediente Médico Digital</h1>
+  <p class="muted">Ingrese al panel medico para generar enlaces y revisar documentos.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Usuario<input name="username" required autocomplete="username"></label>
+    <label>Contrasena<input name="password" type="password" required autocomplete="current-password"></label>
+    <button>Ingresar</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,128 @@
+:root {
+  color-scheme: light;
+  --bg: #eef4f8;
+  --card: #ffffff;
+  --ink: #102033;
+  --muted: #5f6f80;
+  --primary: #176b87;
+  --primary-dark: #0f536a;
+  --line: #d9e4ea;
+  --danger: #9f1d35;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: radial-gradient(circle at top left, #d7eef6, var(--bg) 34rem);
+  color: var(--ink);
+}
+
+.shell { width: min(1120px, calc(100% - 24px)); margin: 24px auto; }
+.card, .hero {
+  background: rgba(255,255,255,.96);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: 0 18px 50px rgba(22, 53, 71, .10);
+  padding: 24px;
+  margin-bottom: 18px;
+}
+.hero { background: linear-gradient(135deg, #12314a, #176b87); color: white; }
+.narrow { max-width: 430px; margin: 10vh auto; }
+.center { text-align: center; }
+.success-card { max-width: 560px; }
+.success-card p { line-height: 1.6; }
+.eyebrow { color: var(--primary-dark); font-size: .82rem; font-weight: 800; letter-spacing: .08em; margin: 0 0 10px; text-transform: uppercase; }
+.topbar { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 18px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+h1, h2 { margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.empty { color: var(--muted); font-weight: 700; margin: 16px 0 0; }
+.hero .muted, .hero p { color: #eaf8fc; }
+.error { color: var(--danger); font-weight: 700; }
+
+.grid { display: grid; gap: 16px; }
+.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stack { display: grid; gap: 14px; }
+.searchbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; }
+label { display: grid; gap: 7px; font-weight: 700; }
+input, select, textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 13px;
+  font: inherit;
+  background: white;
+}
+textarea { min-height: 94px; resize: vertical; }
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 20px;
+  background: var(--primary);
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+button:hover { background: var(--primary-dark); }
+.secondary { background: #526170; }
+.danger { background: var(--danger); }
+.danger:hover { background: #7d1528; }
+.small { padding: 8px 12px; font-size: .86rem; }
+.inline-form { display: inline-flex; margin: 0; }
+.buttonlink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: #e8f3f7;
+  color: var(--primary-dark);
+  font-weight: 800;
+  text-decoration: none;
+}
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.status { display: inline-block; border-radius: 999px; background: #edf6ee; color: #23612d; padding: 5px 9px; font-weight: 800; }
+
+.question, fieldset {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.question span, legend { font-weight: 800; margin-bottom: 10px; display: block; }
+.question label, fieldset label, .declaration { display: inline-flex; align-items: center; gap: 8px; margin-right: 14px; }
+.question input, fieldset input, .declaration input { width: auto; transform: scale(1.25); }
+.conditional { display: none; margin-bottom: 14px; }
+.conditional.show { display: grid; }
+.hidden { display: none !important; }
+.lookup-box {
+  display: grid;
+  align-content: end;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: #f7fbfd;
+}
+.lookup-box p { margin: 0; font-size: .92rem; }
+
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 10px; vertical-align: top; }
+a { color: var(--primary-dark); font-weight: 700; }
+small { color: var(--muted); }
+.image-card { max-width: 900px; margin-left: auto; margin-right: auto; }
+.id-image { display: block; width: 100%; max-height: 70vh; object-fit: contain; border: 1px solid var(--line); border-radius: 16px; background: #f7fbfd; margin: 16px 0; }
+
+@media (max-width: 760px) {
+  .shell { width: min(100% - 14px, 1120px); margin: 8px auto; }
+  .card, .hero { border-radius: 16px; padding: 17px; }
+  .two { grid-template-columns: 1fr; }
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .searchbar { grid-template-columns: 1fr; }
+  .question label, fieldset label { display: flex; margin: 10px 0; }
+  button { width: 100%; min-height: 48px; }
+  .actions, .buttonlink { width: 100%; }
+  .inline-form { width: 100%; }
+}

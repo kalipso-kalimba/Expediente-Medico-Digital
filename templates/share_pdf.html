@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow center success-card">
+  <p class="eyebrow">Expediente Medico Digital</p>
+  <h1>Compartir PDF</h1>
+  <p>{{ encounter.full_name }}<br><small>{{ encounter.identification }}</small></p>
+  <div class="stack">
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}/pdf">Abrir o descargar PDF</a>
+    <button type="button" data-copy="{{ pdf_url }}">Copiar enlace protegido</button>
+    <button type="button" data-share="{{ pdf_url }}">Compartir</button>
+    <a class="buttonlink" href="/doctor/encounters/{{ encounter.id }}">Volver al detalle</a>
+  </div>
+  <p class="muted">Este enlace requiere sesion activa del medico. No debe enviarse como acceso para pacientes.</p>
+</section>
+<script src="/static/app.js"></script>
+{% endblock %}
