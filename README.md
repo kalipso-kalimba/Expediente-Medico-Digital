@@ -42,18 +42,32 @@ pip install -r requirements.txt
 ### Start Command
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port $PORT
+uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
 ```
 
-### Variables requeridas en Render
+### Cómo desplegar en Render
 
-Debe configurar estas variables en el dashboard de Render:
+Opción 1 — Blueprint (automático):
+1. Ir a https://dashboard.render.com
+2. New + → Blueprint → Conectar con `kalipso-kalimba/Expediente-Medico-Digital`
+3. Render leerá `render.yaml` y configurará todo
+4. Hacer clic en **Apply**
+5. En Environment, verificar que `DOCTOR_USERNAME` y `DOCTOR_PASSWORD` tengan valores
 
-- `APP_SECRET_KEY` (obligatoria)
-- `DOCTOR_USERNAME`
-- `DOCTOR_PASSWORD`
-- `APP_COOKIE_SECURE=true`
-- `BASE_URL=https://formulariodigital.onrender.com`
+Opción 2 — Web Service (manual):
+1. New + → Web Service → Conectar repositorio
+2. Build Command: `pip install -r requirements.txt`
+3. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'`
+4. Agregar estas variables en Environment:
+
+| Variable | Valor |
+|---|---|
+| `APP_SECRET_KEY` | Click "Generate" |
+| `DOCTOR_USERNAME` | `doctor` |
+| `DOCTOR_PASSWORD` | Una contraseña segura |
+| `APP_COOKIE_SECURE` | `true` |
+| `BASE_URL` | `https://formulariodigital.onrender.com` |
+| `TSE_LOOKUP_ENABLED` | `false` |
 
 ### Limitaciones de Render Free
 
