@@ -1333,7 +1333,6 @@ def user_new(
     csrf_token: str = Form(...),
     username: str = Form(...),
     full_name: str = Form(...),
-    email: str = Form(...),
     password: str = Form(...),
     role: str = Form("doctor"),
 ) -> Response:
@@ -1348,8 +1347,8 @@ def user_new(
     try:
         with db() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, full_name, email, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (username, hashed, full_name, email, role, datetime.now().isoformat(), datetime.now().isoformat()),
+                "INSERT INTO users (username, password_hash, full_name, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (username, hashed, full_name, role, datetime.now().isoformat(), datetime.now().isoformat()),
             )
     except sqlite3.IntegrityError:
         return template_with_csrf(request, "user_form.html", {"request": request, "user": None, "error": f"El usuario '{username}' ya existe."})

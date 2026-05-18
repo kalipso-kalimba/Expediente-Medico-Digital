@@ -2,10 +2,10 @@
 {% block content %}
 <header class="topbar">
   <div>
-    <h1>Administrar usuarios</h1>
+    <h1>Administrar m&eacute;dicos</h1>
     <p class="muted">Expediente M&eacute;dico Digital</p>
   </div>
-  <a class="buttonlink secondary" href="/doctor/users/new">Nuevo usuario</a>
+  <a class="buttonlink secondary" href="/doctor/users/new">Nuevo m&eacute;dico</a>
   <a class="buttonlink" href="/doctor">Volver al panel</a>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
