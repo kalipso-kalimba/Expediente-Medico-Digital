@@ -37,6 +37,7 @@ TRASH_DIR = BASE_DIR / "papelera"
 STORAGE_DIR = BASE_DIR / "storage"
 DB_PATH = DATA_DIR / "app.db"
 LOCATIONS_PATH = DATA_DIR / "costa_rica_locations.json"
+APP_ENV = os.getenv("APP_ENV", "local").lower()
 SECRET_KEY = os.getenv("APP_SECRET_KEY", "")
 DOCTOR_USERNAME = os.getenv("DOCTOR_USERNAME", "doctor")
 DOCTOR_PASSWORD = os.getenv("DOCTOR_PASSWORD", "")

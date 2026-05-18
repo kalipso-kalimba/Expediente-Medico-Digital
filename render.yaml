@@ -8,6 +8,8 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
     healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: production
       - key: APP_SECRET_KEY
         generateValue: true
       - key: DOCTOR_USERNAME
@@ -16,7 +18,5 @@ services:
         value: Cambiar123!
       - key: APP_COOKIE_SECURE
         value: "true"
-      - key: BASE_URL
-        value: https://expediente-medico-digital.onrender.com
       - key: TSE_LOOKUP_ENABLED
         value: "false"

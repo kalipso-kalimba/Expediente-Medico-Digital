@@ -2,34 +2,66 @@
 
 Sistema web para formularios médicos. Generación de enlaces únicos para pacientes, carga de fotografías de cédula/DIMEX, generación de PDF, panel privado para el médico.
 
-## Ejecutar localmente
+El sistema funciona en **dos entornos** sincronizados desde un mismo repositorio:
+
+| Entorno | URL | Propósito |
+|---|---|---|
+| **Local** | `http://127.0.0.1:8000` | Pruebas, respaldo, trabajo interno |
+| **Render (en línea)** | `https://formulariodigital.onrender.com` | Acceso desde internet |
+
+## Requisitos
+
+- Python 3.12+
+- pip
+
+## Ejecutar en entorno local
 
 ```bash
+# 1. Clonar el repositorio
+git clone https://github.com/kalipso-kalimba/Expediente-Medico-Digital.git
+cd Expediente-Medico-Digital
+
+# 2. Crear entorno virtual
 python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# 3. Instalar dependencias
 pip install -r requirements.txt
+
+# 4. Configurar variables de entorno (opcional)
+# Copiar y editar .env.example como .env
+cp .env.example .env
+
+# 5. Iniciar servidor
 uvicorn app.main:app --reload
 ```
 
-Luego abra `http://127.0.0.1:8000`.
-
-## Acceso médico
-
-- Usuario: `doctor`
-- Contraseña: `Cambiar123!`
-
-Cambie estos valores en producción usando variables de entorno.
+Abrir `http://127.0.0.1:8000`.
 
 ## Variables de entorno
 
-| Variable | Descripción | Ejemplo |
-|---|---|---|
-| `APP_SECRET_KEY` | Clave secreta para sesiones | `cambiar-por-clave-segura` |
-| `DOCTOR_USERNAME` | Usuario del médico | `doctor` |
-| `DOCTOR_PASSWORD` | Contraseña del médico | `Cambiar123!` |
-| `APP_COOKIE_SECURE` | Cookies seguras (true en HTTPS) | `true` |
-| `BASE_URL` | URL pública del sitio | `https://expediente-medico-digital.onrender.com` |
-| `TSE_LOOKUP_ENABLED` | Consulta automática al TSE | `false` |
+| Variable | Local | Render | Descripción |
+|---|---|---|---|
+| `APP_ENV` | `local` | `production` | Entorno de ejecución |
+| `APP_SECRET_KEY` | cualquier valor | generar aleatoria | Clave secreta para sesiones |
+| `DOCTOR_USERNAME` | `doctor` | `doctor` | Usuario del médico |
+| `DOCTOR_PASSWORD` | `Cambiar123!` | elegir una segura | Contraseña del médico |
+| `APP_COOKIE_SECURE` | `false` | `true` | Cookies seguras (requiere HTTPS) |
+| `BASE_URL` | `http://127.0.0.1:8000` | `https://formulariodigital.onrender.com` | URL para enlaces de pacientes |
+| `TSE_LOOKUP_ENABLED` | `false` | `false` | Consulta automática al TSE |
+
+## Ejemplo .env para local
+
+```env
+APP_ENV=local
+APP_SECRET_KEY=mi_clave_local
+DOCTOR_USERNAME=doctor
+DOCTOR_PASSWORD=Cambiar123!
+APP_COOKIE_SECURE=false
+BASE_URL=http://127.0.0.1:8000
+TSE_LOOKUP_ENABLED=false
+```
 
 ## Despliegue en Render
 
@@ -45,20 +77,20 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
 ```
 
-### Cómo desplegar en Render
+### Opción 1 — Blueprint (automático)
 
-Opción 1 — Blueprint (automático):
 1. Ir a https://dashboard.render.com
 2. New + → Blueprint → Conectar con `kalipso-kalimba/Expediente-Medico-Digital`
 3. Render leerá `render.yaml` y configurará todo
 4. Hacer clic en **Apply**
-5. En Environment, verificar que `DOCTOR_USERNAME` y `DOCTOR_PASSWORD` tengan valores
+5. En Environment, verificar las variables
 
-Opción 2 — Web Service (manual):
+### Opción 2 — Web Service (manual)
+
 1. New + → Web Service → Conectar repositorio
-2. Build Command: `pip install -r requirements.txt`
-3. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'`
-4. Agregar estas variables en Environment:
+2. Build: `pip install -r requirements.txt`
+3. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'`
+4. Agregar en Environment:
 
 | Variable | Valor |
 |---|---|
@@ -66,25 +98,38 @@ Opción 2 — Web Service (manual):
 | `DOCTOR_USERNAME` | `doctor` |
 | `DOCTOR_PASSWORD` | Una contraseña segura |
 | `APP_COOKIE_SECURE` | `true` |
-| `BASE_URL` | `https://expediente-medico-digital.onrender.com` |
+| `BASE_URL` | `https://formulariodigital.onrender.com` |
 | `TSE_LOOKUP_ENABLED` | `false` |
 
-### Limitaciones de Render Free
+### Auto-deploy
 
-- El almacenamiento es efímero: los datos se pierden al reiniciar o redeploy.
-- SQLite y archivos locales no persisten entre reinicios.
-- Para producción real se recomienda migrar a PostgreSQL y almacenamiento externo.
+Si el auto-deploy está habilitado, cada push a `master` en GitHub despliega automáticamente en Render. Para forzar un despliegue manual: Dashboard → servicio → Manual Deploy → Deploy latest commit.
+
+## Mantener ambas versiones sincronizadas
+
+Cada cambio debe seguir este flujo:
+
+1. **Probar localmente**: `uvicorn app.main:app --reload`
+2. **Subir a GitHub**: `git push origin master`
+3. **Render se despliega solo** (si auto-deploy está activo) o **Manual Deploy**
+4. **Verificar en línea**: `https://formulariodigital.onrender.com`
+
+## Limitaciones de Render Free
+
+- Almacenamiento efímero: los datos se pierden al reiniciar o redeploy.
 - El servicio se duerme tras 15 minutos sin actividad.
 - Límite de 750 horas/mes.
+- Para producción real: migrar a PostgreSQL + almacenamiento externo.
 
-## Estructura
+## Estructura de carpetas
 
 ```text
-Expediente de pacientes/
-└── Nombre del paciente - número de cédula o DIMEX/
-    ├── 2026-05-18 - Nombre del paciente - número.pdf
-    ├── 2026-05-18 - cedula-frontal - Nombre.jpg
-    └── 2026-05-18 - cedula-trasera - Nombre.jpg
+app/                  → Código backend (FastAPI)
+templates/            → Plantillas HTML
+static/               → CSS y JavaScript
+database/             → Base de datos SQLite y ubicaciones CR
+storage/              → Almacenamiento temporal (runtime)
+Expediente de pacientes/ → PDFs e imágenes de pacientes
 ```
 
 ## Dependencias
