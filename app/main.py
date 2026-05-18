@@ -37,9 +37,9 @@ TRASH_DIR = BASE_DIR / "papelera"
 STORAGE_DIR = BASE_DIR / "storage"
 DB_PATH = DATA_DIR / "app.db"
 LOCATIONS_PATH = DATA_DIR / "costa_rica_locations.json"
-SECRET_KEY = os.getenv("APP_SECRET_KEY", "dev-secret-change-me")
+SECRET_KEY = os.getenv("APP_SECRET_KEY", "")
 DOCTOR_USERNAME = os.getenv("DOCTOR_USERNAME", "doctor")
-DOCTOR_PASSWORD = os.getenv("DOCTOR_PASSWORD", "Cambiar123!")
+DOCTOR_PASSWORD = os.getenv("DOCTOR_PASSWORD", "")
 COOKIE_SECURE = os.getenv("APP_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 TSE_LOOKUP_ENABLED = os.getenv("TSE_LOOKUP_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
@@ -201,6 +201,12 @@ def template_with_csrf(request: Request, template_name: str, context: dict[str, 
 
 @app.on_event("startup")
 def startup() -> None:
+    if not SECRET_KEY:
+        logger.warning("APP_SECRET_KEY no configurada. Usando clave insegura para desarrollo local.")
+    if not DOCTOR_PASSWORD:
+        logger.warning("DOCTOR_PASSWORD no configurada. Usando contrasena por defecto para desarrollo local.")
+    if not BASE_URL:
+        logger.warning("BASE_URL no configurada. Las URLs generadas se basaran en la solicitud entrante.")
     init_db()
 
 
@@ -655,13 +661,14 @@ def patient_form(token: str, request: Request) -> HTMLResponse:
         link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
         if link and not link["opened_at"] and not link["used_at"] and not link["canceled_at"] and datetime.fromisoformat(link["expires_at"]) >= datetime.now():
             conn.execute("UPDATE links SET opened_at = ? WHERE token = ?", (datetime.now().isoformat(), token))
+            link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
     if not link or link["used_at"] or link["canceled_at"] or datetime.fromisoformat(link["expires_at"]) < datetime.now():
         return link_unavailable(request)
     return template_with_csrf(request, "patient.html", {"request": request, "token": token})
 
 
 @app.post("/patient/{token}/submit")
-async def submit_form(
+def submit_form(
     token: str,
     request: Request,
     nationality: str = Form(...),
@@ -698,7 +705,7 @@ async def submit_form(
     uses_glasses: str = Form(...),
     glasses_use: str = Form(""),
     laterality: str = Form(...),
-    license_types: list[str] = Form(...),
+    license_types: list[str] = Form(default=[]),
     truth_declaration: str = Form(...),
     csrf_token: str = Form(...),
     cedula_front: UploadFile = File(...),
