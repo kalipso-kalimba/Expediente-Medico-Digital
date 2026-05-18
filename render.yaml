@@ -10,6 +10,10 @@ services:
     envVars:
       - key: APP_SECRET_KEY
         generateValue: true
+      - key: DOCTOR_USERNAME
+        value: doctor
+      - key: DOCTOR_PASSWORD
+        value: Cambiar123!
       - key: APP_COOKIE_SECURE
         value: "true"
       - key: BASE_URL
