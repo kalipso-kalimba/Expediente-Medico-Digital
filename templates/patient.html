@@ -5,6 +5,12 @@
   <p>Complete la informacion paso a paso. Los campos condicionales aparecen solo cuando corresponden.</p>
 </section>
 
+{% if is_in_person %}
+<section class="card" style="border-left: 4px solid #176b87; background: #f0f8fc;">
+  <p style="margin:0;font-weight:700;">Modo presencial &mdash; El m&eacute;dico est&aacute; llenando este formulario junto con el paciente.</p>
+</section>
+{% endif %}
+
 <form method="post" action="/patient/{{ token }}/submit" enctype="multipart/form-data" class="card form" id="patientForm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <h2>Datos generales</h2>

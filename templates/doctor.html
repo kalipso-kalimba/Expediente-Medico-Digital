@@ -26,11 +26,17 @@
 </nav>
 
 <section class="card">
-  <h2>Nuevo enlace para paciente</h2>
-  <form method="post" action="/doctor/links">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button>Generar enlace</button>
-  </form>
+  <h2>Formulario para paciente</h2>
+  <div class="grid two" style="grid-template-columns: 1fr 1fr;">
+    <form method="post" action="/doctor/links">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button>Generar enlace para enviar</button>
+    </form>
+    <form method="post" action="/doctor/forms/in-person">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary">Llenar formulario presencial</button>
+    </form>
+  </div>
 </section>
 
 <section class="grid">
@@ -38,17 +44,20 @@
     <h2>Enlaces recientes</h2>
     <div class="tablewrap">
       <table>
-        <tr><th>Enlace</th><th>Creado</th><th>Vence</th><th>Estado</th><th>Completado</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
+        <tr><th>Enlace</th><th>Tipo</th><th>Creado</th><th>Vence</th><th>Estado</th><th>Completado</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
         {% for link in links %}
         <tr>
           <td><a href="/patient/{{ link.token }}" class="copy-source">{{ base_url }}/patient/{{ link.token }}</a></td>
+          <td>{% if link.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
           <td>{{ link.created_at[:16].replace('T', ' ') }}</td>
           <td>{{ link.expires_at[:10] }}</td>
           <td><span class="status">{{ link.status_es }}</span></td>
           <td>{{ link.completed_at[:16].replace('T', ' ') if link.completed_at else "-" }}</td>
           {% if user.role == 'admin' %}<td><small>{{ link.doctor_username or 'Admin' }}</small></td>{% endif %}
           <td class="actions">
+            {% if link.source != 'in_person' %}
             <button type="button" class="small secondary" data-copy="{{ base_url }}/patient/{{ link.token }}">Copiar enlace</button>
+            {% endif %}
             <form method="post" action="/doctor/links/{{ link.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea borrar este enlace? El paciente ya no podra acceder al formulario mediante este enlace.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="small danger" type="submit">Borrar</button>
@@ -69,10 +78,11 @@
     <h2>Formularios completados hoy</h2>
     <div class="tablewrap">
       <table>
-        <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
+        <tr><th>Paciente</th><th>Tipo</th><th>Completado</th><th>Documento</th><th>Fotografias</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
         {% for item in encounters %}
         <tr>
           <td>{{ item.full_name }}<br><small>{{ item.identification }}</small></td>
+          <td>{% if item.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
           <td>{{ item.created_at[:16].replace('T', ' ') }}</td>
           <td>PDF generado</td>
           <td>Frontal y trasera cargadas</td>

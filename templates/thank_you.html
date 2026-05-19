@@ -3,7 +3,14 @@
 <section class="card narrow center success-card">
   <p class="eyebrow">Expediente Medico Digital</p>
   <h1>Formulario completado con exito</h1>
+  {% if is_in_person %}
+  <p>El formulario presencial ha sido completado con exito. La informacion fue recibida correctamente y el PDF se ha generado.</p>
+  {% else %}
   <p>Muchas gracias. Ha completado con exito el formulario. Su informacion fue recibida correctamente y sera revisada por el medico.</p>
+  {% endif %}
+  {% if is_in_person %}
+  <a class="buttonlink" href="/doctor" style="font-size:1rem;padding:12px 28px;">Volver al panel m&eacute;dico</a>
+  {% endif %}
   <button type="button" onclick="window.close()">Finalizar</button>
 </section>
 {% endblock %}

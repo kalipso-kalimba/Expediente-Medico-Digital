@@ -240,10 +240,14 @@ def init_db() -> None:
             conn.execute("ALTER TABLE links ADD COLUMN canceled_by TEXT")
         if "patient_id" not in link_columns:
             conn.execute("ALTER TABLE links ADD COLUMN patient_id INTEGER REFERENCES patients(id)")
+        if "source" not in link_columns:
+            conn.execute("ALTER TABLE links ADD COLUMN source TEXT NOT NULL DEFAULT 'remote'")
 
         encounter_columns = {row["name"] for row in conn.execute("PRAGMA table_info(encounters)").fetchall()}
         if "encounter_folder_path" not in encounter_columns:
             conn.execute("ALTER TABLE encounters ADD COLUMN encounter_folder_path TEXT")
+        if "source" not in encounter_columns:
+            conn.execute("ALTER TABLE encounters ADD COLUMN source TEXT NOT NULL DEFAULT 'remote'")
 
         conn.execute(
             """
@@ -347,8 +351,8 @@ def sync_existing_expedientes() -> None:
                 admin_id = 1
                 conn.execute(
                     """
-                    INSERT INTO encounters (patient_id, token, payload, pdf_path, front_image_path, back_image_path, encounter_folder_path, created_at, doctor_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO encounters (patient_id, token, payload, pdf_path, front_image_path, back_image_path, encounter_folder_path, created_at, doctor_id, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'remote')
                     """,
                     (patient_id, token, json.dumps(payload, ensure_ascii=True), str(p), str(front_image), str(back_image), enc_folder_path, created_at, admin_id),
                 )
@@ -437,7 +441,7 @@ def require_admin(request: Request) -> dict:
 
 
 def link_unavailable(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("link_unavailable.html", {"request": request}, status_code=404)
+    return templates.TemplateResponse("link_unavailable.html", {"request": request})
 
 
 def load_locations() -> dict[str, Any]:
@@ -611,7 +615,7 @@ def available_path(path: Path) -> Path:
     raise HTTPException(500, "No se pudo crear un nombre de archivo disponible")
 
 
-def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path: Path) -> None:
+def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path: Path, source: str = "remote") -> None:
     styles = getSampleStyleSheet()
     section_style = ParagraphStyle("SectionTitle", parent=styles["Heading2"], fontSize=10, textColor=colors.HexColor("#1f3a5f"), spaceBefore=12, spaceAfter=4)
     small_style = ParagraphStyle("SmallText", parent=styles["Normal"], fontSize=7.5, leading=9, textColor=colors.HexColor("#555555"))
@@ -650,6 +654,8 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
         "diagn\u00f3stico o decisi\u00f3n m\u00e9dica."
     )
     story.append(Paragraph(disclaimer, small_style))
+    origin_text = "Origen del formulario: Atenci\u00f3n presencial." if source == "in_person" else "Origen del formulario: Enlace enviado al paciente."
+    story.append(Paragraph(origin_text, small_style))
     story.append(Spacer(1, 10))
 
     # Field definitions
@@ -911,7 +917,7 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: st
             ).fetchall()
             encounters_raw = conn.execute(
                 """
-                SELECT e.id, e.created_at, p.full_name, p.identification,
+                SELECT e.id, e.created_at, e.source, p.full_name, p.identification,
                        u.username AS doctor_username
                 FROM encounters e
                 JOIN patients p ON p.id = e.patient_id
@@ -936,7 +942,7 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: st
             ).fetchall()
             encounters_raw = conn.execute(
                 """
-                SELECT e.id, e.created_at, p.full_name, p.identification
+                SELECT e.id, e.created_at, e.source, p.full_name, p.identification
                 FROM encounters e JOIN patients p ON p.id = e.patient_id
                 WHERE e.doctor_id = ? AND e.created_at >= ? AND e.created_at < ?
                 ORDER BY e.created_at DESC
@@ -975,6 +981,19 @@ def create_link(request: Request, user: dict = Depends(require_doctor), csrf_tok
             (token, now.isoformat(), (now + timedelta(days=14)).isoformat(), user["id"]),
         )
     return RedirectResponse("/doctor", status_code=303)
+
+
+@app.post("/doctor/forms/in-person")
+def create_in_person_form(request: Request, user: dict = Depends(require_doctor), csrf_token: str = Form(...)) -> RedirectResponse:
+    validate_csrf(request, csrf_token)
+    token = secrets.token_urlsafe(24)
+    now = datetime.now()
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO links (token, created_at, expires_at, doctor_id, source) VALUES (?, ?, ?, ?, 'in_person')",
+            (token, now.isoformat(), (now + timedelta(days=1)).isoformat(), user["id"]),
+        )
+    return RedirectResponse(f"/patient/{token}?mode=in_person", status_code=303)
 
 
 @app.post("/doctor/links/{link_id}/delete")
@@ -1097,7 +1116,7 @@ def patient_search(request: Request, query: str = "", identification: str = "", 
 
 
 @app.get("/patient/{token}", response_class=HTMLResponse)
-def patient_form(token: str, request: Request) -> HTMLResponse:
+def patient_form(token: str, request: Request, mode: str = "") -> HTMLResponse:
     with db() as conn:
         link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
         if link and not link["opened_at"] and not link["used_at"] and not link["canceled_at"] and datetime.fromisoformat(link["expires_at"]) >= datetime.now():
@@ -1105,7 +1124,8 @@ def patient_form(token: str, request: Request) -> HTMLResponse:
             link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
     if not link or link["used_at"] or link["canceled_at"] or datetime.fromisoformat(link["expires_at"]) < datetime.now():
         return link_unavailable(request)
-    return template_with_csrf(request, "patient.html", {"request": request, "token": token})
+    is_in_person = mode == "in_person" or link["source"] == "in_person"
+    return template_with_csrf(request, "patient.html", {"request": request, "token": token, "is_in_person": is_in_person})
 
 
 @app.post("/patient/{token}/submit")
@@ -1169,6 +1189,7 @@ def submit_form(
         if not link or link["used_at"] or link["canceled_at"] or datetime.fromisoformat(link["expires_at"]) < datetime.now():
             return link_unavailable(request)
         doctor_id = link["doctor_id"] or 1
+        form_source = link["source"] or "remote"
 
     data = {
         "nationality": nationality,
@@ -1237,7 +1258,7 @@ def submit_form(
 
     save_upload(cedula_front, front_path)
     save_upload(cedula_back, back_path)
-    build_pdf(pdf_path, data, front_path, back_path)
+    build_pdf(pdf_path, data, front_path, back_path, form_source)
 
     try:
         with db() as conn:
@@ -1251,21 +1272,23 @@ def submit_form(
                 patient_id = cur.lastrowid
             conn.execute(
                 """
-                INSERT INTO encounters (patient_id, token, payload, pdf_path, front_image_path, back_image_path, encounter_folder_path, created_at, doctor_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO encounters (patient_id, token, payload, pdf_path, front_image_path, back_image_path, encounter_folder_path, created_at, doctor_id, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (patient_id, token, json.dumps(data, ensure_ascii=True), str(pdf_path), str(front_path), str(back_path), str(encounter_folder), datetime.now().isoformat(), doctor_id),
+                (patient_id, token, json.dumps(data, ensure_ascii=True), str(pdf_path), str(front_path), str(back_path), str(encounter_folder), datetime.now().isoformat(), doctor_id, form_source),
             )
             conn.execute("UPDATE links SET used_at = ?, patient_id = ? WHERE token = ?", (datetime.now().isoformat(), patient_id, token))
     except Exception:
         logger.exception("Error registrando la atencion despues de generar el PDF: %s", pdf_path)
 
-    return RedirectResponse("/thank-you", status_code=303)
+    thank_you_mode = "in_person" if form_source == "in_person" else ""
+    return RedirectResponse(f"/thank-you?mode={thank_you_mode}", status_code=303)
 
 
 @app.get("/thank-you", response_class=HTMLResponse)
-def thank_you(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("thank_you.html", {"request": request})
+def thank_you(request: Request, mode: str = "") -> HTMLResponse:
+    is_in_person = mode == "in_person"
+    return templates.TemplateResponse("thank_you.html", {"request": request, "is_in_person": is_in_person})
 
 
 @app.get("/patient/{token}/thanks", response_class=HTMLResponse)
