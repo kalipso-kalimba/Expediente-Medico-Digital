@@ -29,7 +29,6 @@
       <tr>
         <td>
           {{ u.username }}
-          {% if u.username == protected_username %}<br><small class="muted">Cuenta principal protegida</small>{% endif %}
           {% if u.must_change_password and u.is_active and not u.deleted_at %}<br><small class="warning">Debe cambiar contrase&ntilde;a</small>{% endif %}
         </td>
         <td>{{ u.full_name }}</td>
@@ -52,9 +51,7 @@
               <button class="small secondary" type="submit">Restaurar cuenta</button>
             </form>
           {% else %}
-            {% if u.username == protected_username %}
-              <span class="muted small">No disponible</span>
-            {% elif u.is_active %}
+            {% if u.is_active %}
               <form method="post" action="/doctor/users/{{ u.id }}/suspend" class="inline-form" data-confirm="Suspender la cuenta de {{ u.username }}? No podr&aacute; ingresar hasta ser reactivado.">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="small warning" type="submit">Suspender cuenta</button>
@@ -65,12 +62,10 @@
                 <button class="small secondary" type="submit">Reactivar cuenta</button>
               </form>
             {% endif %}
-            {% if u.username != protected_username %}
-              <form method="post" action="/doctor/users/{{ u.id }}/delete" class="inline-form" data-confirm="Borrar la cuenta de {{ u.username }}? El m&eacute;dico ya no podr&aacute; ingresar. Los expedientes y datos se conservan para el administrador.">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="small danger" type="submit">Borrar cuenta</button>
-              </form>
-            {% endif %}
+            <form method="post" action="/doctor/users/{{ u.id }}/delete" class="inline-form" data-confirm="Borrar la cuenta de {{ u.username }}? El m&eacute;dico ya no podr&aacute; ingresar. Los expedientes y datos se conservan para el administrador.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="small danger" type="submit">Borrar cuenta</button>
+            </form>
             <form method="post" action="/doctor/users/{{ u.id }}/reset-password" class="inline-form" data-confirm="Restablecer la contrase&ntilde;a de {{ u.username }} a usuariodoctor?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="small secondary" type="submit">Restablecer contrase&ntilde;a</button>

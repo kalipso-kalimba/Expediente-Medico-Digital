@@ -11,22 +11,12 @@ Tests all 24 verification points:
   21:   Permission checks on PDF/images
   22-24: No ISE, works locally
 """
+import io, json, os, re, sys, threading, time
+from pathlib import Path
 
-import io
-import os
-import re
-import sys
-import threading
-import time
-
-if __name__ != "__main__":
-    import pytest
-
-    pytest.skip("script-style smoke test; run with python tests/test_comprehensive.py", allow_module_level=True)
-
-os.environ["APP_SECRET_KEY"] = "test-comprehensive-secret-key-2024"  # noqa: S105
+os.environ["APP_SECRET_KEY"] = "test-comprehensive-secret-key-2024"
 os.environ["DOCTOR_USERNAME"] = "admin"
-os.environ["DOCTOR_PASSWORD"] = "Admin1234!"  # noqa: S105
+os.environ["DOCTOR_PASSWORD"] = "Admin1234!"
 os.environ["BASE_URL"] = "http://localhost:18765"
 os.environ["APP_ENV"] = "local"
 os.environ["TSE_LOOKUP_ENABLED"] = "false"
@@ -47,47 +37,39 @@ if os.path.exists(db_path):
 exp_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Expediente de pacientes")
 if os.path.exists(exp_dir):
     import shutil
-
     for item in os.listdir(exp_dir):
         ipath = os.path.join(exp_dir, item)
         if os.path.isdir(ipath):
             shutil.rmtree(ipath, ignore_errors=True)
 
-import uvicorn  # noqa: E402
-
+import uvicorn
 
 def start_server():
     uvicorn.run("app.main:app", host=HOST, port=PORT, log_level="error")
-
 
 server_thread = threading.Thread(target=start_server, daemon=True)
 server_thread.start()
 time.sleep(3)
 
 # Generate a minimal valid JPEG
-from PIL import Image  # noqa: E402
-
+from PIL import Image
 img_io = io.BytesIO()
 Image.new("RGB", (50, 50), color="red").save(img_io, "JPEG")
 FAKE_JPEG = img_io.getvalue()
 
-import requests  # noqa: E402
-
+import requests
 s = requests.Session()
 
 results = []
-
 
 def check(desc: str, ok: bool, detail: str = ""):
     results.append((desc, ok, detail))
     status = "PASS" if ok else "FAIL"
     print(f"  [{status}] {desc}" + (f" | {detail}" if detail else ""))
 
-
 def get_csrf(html: str) -> str:
     m = re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
     return m.group(1) if m else ""
-
 
 def login(username: str, password: str) -> bool:
     """Login and return True if successful (session cookie set)."""
@@ -96,14 +78,13 @@ def login(username: str, password: str) -> bool:
     csrf = get_csrf(r.text)
     if not csrf:
         return False
-    r = s.post(f"{BASE}/login", data={"username": username, "password": password, "csrf_token": csrf}, allow_redirects=False)
+    r = s.post(f"{BASE}/login", data={"username": username, "password": password, "csrf_token": csrf},
+               allow_redirects=False)
     return r.status_code == 303
-
 
 def is_logged_in():
     r = s.get(f"{BASE}/doctor", allow_redirects=False)
     return r.status_code == 200
-
 
 # ================================================================
 # VERIFICATION 1: /doctor/forms/in-person exists
@@ -132,7 +113,7 @@ check("1f. Redirect with mode=in_person", "mode=in_person" in location and bool(
 # VERIFICATION 2: In-person form associated with current doctor
 # ================================================================
 r = s.get(f"{BASE}/doctor")
-all_tokens = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text)))
+all_tokens = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r.text)))
 check("2. In-person token in admin panel", in_person_token in all_tokens)
 
 # ================================================================
@@ -147,42 +128,16 @@ csrf3 = get_csrf(r.text)
 pid = f"1-{str(abs(hash(ts)) % 10000).zfill(4)}-{str(abs(hash(ts + 'x')) % 10000).zfill(4)}"
 files = {"cedula_front": ("f.jpg", FAKE_JPEG, "image/jpeg"), "cedula_back": ("b.jpg", FAKE_JPEG, "image/jpeg")}
 data3 = {
-    "csrf_token": csrf3,
-    "nationality": "Costarricense",
-    "id_type": "cedula",
-    "identification": pid,
-    "full_name": f"InPerson {ts}",
-    "whatsapp": "88888888",
-    "email": f"ip{ts}@t.com",
-    "age": "30",
-    "birth_date": "1994-01-01",
-    "civil_status": "S",
-    "profession": "P",
-    "province": "San Jos\u00e9",
-    "province_code": "1",
-    "canton": "Central",
-    "canton_code": "1",
-    "district_or_locality": "Carmen",
-    "district_or_locality_code": "1",
-    "exact_address": "200 m este",
-    "organ_donor": "No",
-    "has_illness": "No",
-    "illnesses": "",
-    "treatments": "",
-    "smokes": "No",
-    "smoke_frequency": "",
-    "smoke_product": "",
-    "drinks": "No",
-    "drink_frequency": "",
-    "uses_drugs": "No",
-    "drug_type": "",
-    "drug_frequency": "",
-    "weight": "70",
-    "height": "175",
-    "uses_glasses": "No",
-    "glasses_use": "",
-    "laterality": "Diestro(a)",
-    "license_types": "",
+    "csrf_token": csrf3, "nationality": "Costarricense", "id_type": "cedula",
+    "identification": pid, "full_name": f"InPerson {ts}", "whatsapp": "88888888",
+    "email": f"ip{ts}@t.com", "age": "30", "birth_date": "1994-01-01", "civil_status": "S",
+    "profession": "P", "province": "San Jos\u00e9", "province_code": "1",
+    "canton": "Central", "canton_code": "1", "district_or_locality": "Carmen",
+    "district_or_locality_code": "1", "exact_address": "200 m este", "organ_donor": "No",
+    "has_illness": "No", "illnesses": "", "treatments": "", "smokes": "No",
+    "smoke_frequency": "", "smoke_product": "", "drinks": "No", "drink_frequency": "",
+    "uses_drugs": "No", "drug_type": "", "drug_frequency": "", "weight": "70", "height": "175",
+    "uses_glasses": "No", "glasses_use": "", "laterality": "Diestro(a)", "license_types": "",
     "truth_declaration": "accepted",
 }
 r3 = s.post(f"{BASE}/patient/{in_person_token}/submit", data=data3, files=files, allow_redirects=False)
@@ -190,8 +145,7 @@ check("3c. In-person submit (303)", r3.status_code == 303, f"status={r3.status_c
 check("3d. Thank-you with mode=in_person", "mode=in_person" in r3.headers.get("Location", ""), f"loc={r3.headers.get('Location', '')}")
 
 # Direct DB check
-import sqlite3  # noqa: E402
-
+import sqlite3
 conn = sqlite3.connect(db_path)
 conn.row_factory = sqlite3.Row
 e = conn.execute("SELECT source FROM encounters ORDER BY id DESC LIMIT 1").fetchone()
@@ -201,7 +155,7 @@ check("3e. Encounter source is 'in_person'", e and e["source"] == "in_person")
 # VERIFICATION 4: Remote links save source='remote'
 # ================================================================
 r = s.get(f"{BASE}/doctor")
-all_tokens2 = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text)))
+all_tokens2 = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r.text)))
 remote_tokens = [t for t in all_tokens2 if t != in_person_token]
 check("4a. Remote token available", len(remote_tokens) >= 1)
 if remote_tokens:
@@ -233,19 +187,17 @@ check("6. No encounters with NULL doctor_id", c2["c"] == 0)
 # ================================================================
 print("\n=== 7-12: Data isolation ===")
 
-
 def create_doctor(username: str, full_name: str) -> bool:
     r = s.get(f"{BASE}/doctor/users/new")
     csrf = get_csrf(r.text)
     if not csrf:
         return False
-    r2 = s.post(f"{BASE}/doctor/users/new", data={"csrf_token": csrf, "username": username, "full_name": full_name, "role": "doctor"}, allow_redirects=False)
+    r2 = s.post(f"{BASE}/doctor/users/new", data={"csrf_token": csrf, "username": username, "full_name": full_name, "role": "doctor"},
+                allow_redirects=False)
     return r2.status_code == 303
-
 
 check("7a. Create doctor_a", create_doctor("doctor_a", "Doctor A"))
 check("7b. Create doctor_b", create_doctor("doctor_b", "Doctor B"))
-
 
 def force_login(username, new_pass):
     """Login, change forced password, return new session."""
@@ -254,18 +206,18 @@ def force_login(username, new_pass):
     csrf = get_csrf(r.text)
     if not csrf:
         return None
-    r2 = s2.post(f"{BASE}/login", data={"username": username, "password": "usuariodoctor", "csrf_token": csrf}, allow_redirects=False)
+    r2 = s2.post(f"{BASE}/login", data={"username": username, "password": "usuariodoctor", "csrf_token": csrf},
+                 allow_redirects=False)
     if r2.status_code != 303:
         return None
     r3 = s2.get(f"{BASE}/doctor/force-change-password", allow_redirects=False)
     if r3.status_code != 200:
         return None
     csrf2 = get_csrf(r3.text)
-    r4 = s2.post(
-        f"{BASE}/doctor/force-change-password",
-        data={"csrf_token": csrf2, "current_password": "usuariodoctor", "new_password": new_pass, "confirm_password": new_pass},
-        allow_redirects=False,
-    )
+    r4 = s2.post(f"{BASE}/doctor/force-change-password",
+                 data={"csrf_token": csrf2, "current_password": "usuariodoctor",
+                       "new_password": new_pass, "confirm_password": new_pass},
+                 allow_redirects=False)
     if r4.status_code != 303:
         return None
     # Now logged in with new password
@@ -273,7 +225,6 @@ def force_login(username, new_pass):
     if r5.status_code == 200:
         return s2
     return None
-
 
 da_session = force_login("doctor_a", "DoctorA123!")
 check("7c. Doctor A password changed + panel", da_session is not None)
@@ -288,49 +239,49 @@ if da_session:
     da_session.post(f"{BASE}/doctor/links", data={"csrf_token": csrf_a}, allow_redirects=False)
     da_session.post(f"{BASE}/doctor/forms/in-person", data={"csrf_token": csrf_a}, allow_redirects=False)
     r2 = da_session.get(f"{BASE}/doctor")
-    tokens_a = parse_tokens = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r2.text)))
-    check("7d. Doctor A sees their links (>= 2)", len(tokens_a) >= 2)
-    enc_a = list(set(re.findall(r"/doctor/encounters/(\d+)", r2.text)))
-    check("7e. Doctor A encounters count", len(enc_a) >= 0)
+    tokens_a = parse_tokens = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r2.text)))
+    check(f"7d. Doctor A sees their links (>= 2)", len(tokens_a) >= 2)
+    enc_a = list(set(re.findall(r'/doctor/encounters/(\d+)', r2.text)))
+    check(f"7e. Doctor A encounters count", len(enc_a) >= 0)
 
 # Doctor B initially sees 0 links
 if db_session:
     r = db_session.get(f"{BASE}/doctor")
-    tokens_b = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text)))
-    check("8b. Doctor B sees 0 links initially", len(tokens_b) == 0)
+    tokens_b = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r.text)))
+    check(f"8b. Doctor B sees 0 links initially", len(tokens_b) == 0)
 
     # Doctor B creates own link
     csrf_b = get_csrf(r.text)
     db_session.post(f"{BASE}/doctor/links", data={"csrf_token": csrf_b}, allow_redirects=False)
     r2 = db_session.get(f"{BASE}/doctor")
-    tokens_b2 = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r2.text)))
-    check("8c. Doctor B sees own link (>= 1)", len(tokens_b2) >= 1)
+    tokens_b2 = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r2.text)))
+    check(f"8c. Doctor B sees own link (>= 1)", len(tokens_b2) >= 1)
 
 # VERIFICATION 9: Admin sees everything
 r = s.get(f"{BASE}/doctor")
-admin_tokens = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text)))
-check("9. Admin sees all links (>= 5)", len(admin_tokens) >= 5)
+admin_tokens = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r.text)))
+check(f"9. Admin sees all links (>= 5)", len(admin_tokens) >= 5)
 
 # VERIFICATION 10: Admin links not visible to doctors
 if da_session:
     r = da_session.get(f"{BASE}/doctor")
-    da_tokens = set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text))
+    da_tokens = set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r.text))
     admin_only = set(admin_tokens) - da_tokens
     check("10. Admin's own links not in Doctor A", len(admin_only) >= 2)
 
 # VERIFICATION 11: Doctor A links not in Doctor B
 if da_session and db_session:
     r_a = da_session.get(f"{BASE}/doctor")
-    da_set = set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r_a.text))
+    da_set = set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r_a.text))
     r_b = db_session.get(f"{BASE}/doctor")
-    db_set = set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r_b.text))
+    db_set = set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r_b.text))
     check("11. Doctor A links NOT in Doctor B", len(da_set & db_set) == 0)
 
 # VERIFICATION 12: Doctor A patients not visible to Doctor B
 if da_session and db_session:
     # Submit encounters for both
     r_a = da_session.get(f"{BASE}/doctor")
-    a_toks = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r_a.text)))
+    a_toks = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r_a.text)))
     if a_toks:
         at = a_toks[0]
         ra = s.get(f"{BASE}/patient/{at}")
@@ -345,7 +296,7 @@ if da_session and db_session:
         s.post(f"{BASE}/patient/{at}/submit", data=data_a, files=files_a, allow_redirects=False)
 
     r_b = db_session.get(f"{BASE}/doctor")
-    b_toks = list(set(re.findall(r"/patient/([A-Za-z0-9_-]+)", r_b.text)))
+    b_toks = list(set(re.findall(r'/patient/([A-Za-z0-9_-]+)', r_b.text)))
     if b_toks:
         bt = b_toks[0]
         rb = s.get(f"{BASE}/patient/{bt}")
@@ -361,9 +312,9 @@ if da_session and db_session:
 
     # Check encounters are isolated
     r_ae = da_session.get(f"{BASE}/doctor")
-    enc_a_set = set(re.findall(r"/doctor/encounters/(\d+)", r_ae.text))
+    enc_a_set = set(re.findall(r'/doctor/encounters/(\d+)', r_ae.text))
     r_be = db_session.get(f"{BASE}/doctor")
-    enc_b_set = set(re.findall(r"/doctor/encounters/(\d+)", r_be.text))
+    enc_b_set = set(re.findall(r'/doctor/encounters/(\d+)', r_be.text))
     check("12. Doctor A encounters not in Doctor B", len(enc_a_set & enc_b_set) == 0)
 
 # ================================================================
@@ -383,8 +334,7 @@ check("pre. Create doctor_c", create_doctor("doctor_c", "Doctor C"))
 # VERIFICATIONS 14-16: Password creation and change
 # ================================================================
 print("\n=== 14-16: Passwords ===")
-import passlib.hash as pl_hash  # noqa: E402
-
+import passlib.hash as pl_hash
 # doctor_a changed password - hash should be DoctorA123!
 ra = conn.execute("SELECT password_hash FROM users WHERE username = 'doctor_a'").fetchone()
 check("14a. doctor_a has password_hash", bool(ra["password_hash"]))
@@ -413,9 +363,9 @@ csrf = get_csrf(r16.text)
 s_c.post(f"{BASE}/login", data={"username": "doctor_c", "password": "usuariodoctor", "csrf_token": csrf}, allow_redirects=False)
 r16b = s_c.get(f"{BASE}/doctor/force-change-password")
 csrf16 = get_csrf(r16b.text)
-r16c = s_c.post(
-    f"{BASE}/doctor/force-change-password", data={"csrf_token": csrf16, "current_password": "usuariodoctor", "new_password": "usuariodoctor", "confirm_password": "usuariodoctor"}
-)
+r16c = s_c.post(f"{BASE}/doctor/force-change-password",
+                data={"csrf_token": csrf16, "current_password": "usuariodoctor",
+                      "new_password": "usuariodoctor", "confirm_password": "usuariodoctor"})
 check("16b. Rejects usuariodoctor as new password", "no puede ser la contrasena provisional" in r16c.text)
 
 # ================================================================
@@ -482,7 +432,7 @@ check("20c. Login with reset password works (303)", r20b.status_code == 303)
 print("\n=== 21: Permission validation ===")
 if da_session:
     r = s.get(f"{BASE}/doctor")
-    admin_eids = list(set(re.findall(r"/doctor/encounters/(\d+)", r.text)))
+    admin_eids = list(set(re.findall(r'/doctor/encounters/(\d+)', r.text)))
     # Fresh login doctor_b
     s_b_fresh = requests.Session()
     r = s_b_fresh.get(f"{BASE}/")
@@ -495,21 +445,18 @@ if da_session:
         r_home = s_b_fresh.get(f"{BASE}/doctor/force-change-password")
         csrf2 = get_csrf(r_home.text)
         if csrf2:
-            s_b_fresh.post(
-                f"{BASE}/doctor/force-change-password",
-                data={"csrf_token": csrf2, "current_password": "usuariodoctor", "new_password": "DoctorB456!", "confirm_password": "DoctorB456!"},
-                allow_redirects=False,
-            )
-    # Use a DB query to find an encounter owned by admin (id=1), not by other doctors
-    admin_owned = conn.execute("SELECT id FROM encounters WHERE doctor_id = 1 LIMIT 1").fetchone()
-    if admin_owned:
-        eid = admin_owned["id"]
+            s_b_fresh.post(f"{BASE}/doctor/force-change-password",
+                          data={"csrf_token": csrf2, "current_password": "usuariodoctor",
+                                "new_password": "DoctorB456!", "confirm_password": "DoctorB456!"},
+                          allow_redirects=False)
+    if admin_eids:
+        eid = admin_eids[0]
         r21a = s_b_fresh.get(f"{BASE}/doctor/encounters/{eid}/pdf", allow_redirects=False)
-        check("21a. Doctor B denied admin PDF", r21a.status_code == 404, f"status={r21a.status_code} loc={r21a.headers.get('location', '')}")
+        check("21a. Doctor B denied admin PDF", r21a.status_code == 404)
         r21b = s_b_fresh.get(f"{BASE}/doctor/encounters/{eid}/images/front", allow_redirects=False)
-        check("21b. Doctor B denied admin image", r21b.status_code == 404, f"status={r21b.status_code} loc={r21b.headers.get('location', '')}")
+        check("21b. Doctor B denied admin image", r21b.status_code == 404)
         r21c = s_b_fresh.get(f"{BASE}/doctor/encounters/{eid}/share", allow_redirects=False)
-        check("21c. Doctor B denied admin share", r21c.status_code == 404, f"status={r21c.status_code} loc={r21c.headers.get('location', '')}")
+        check("21c. Doctor B denied admin share", r21c.status_code == 404)
 
 # ================================================================
 # VERIFICATION 22-24: No errors, works locally, same stack

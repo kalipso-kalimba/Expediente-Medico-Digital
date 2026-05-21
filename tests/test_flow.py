@@ -1,26 +1,14 @@
-import http.client
-import os
-import sys
-import threading
-import time
-import urllib.parse
+import os, sys, threading, time, json, http.client, urllib.parse
 
-if __name__ != "__main__":
-    import pytest
-
-    pytest.skip("script-style smoke test; run with python tests/test_flow.py", allow_module_level=True)
-
-os.environ["APP_SECRET_KEY"] = "test-secret-key"  # noqa: S105
+os.environ["APP_SECRET_KEY"] = "test-secret-key"
 os.environ["DOCTOR_USERNAME"] = "doctor"
-os.environ["DOCTOR_PASSWORD"] = "test1234"  # noqa: S105
+os.environ["DOCTOR_PASSWORD"] = "test1234"
 
 sys.path.insert(0, "G:/Mi unidad/Expediente M\u00e9dico Digital")
 import uvicorn
 
-
 def start():
     uvicorn.run("app.main:app", host="127.0.0.1", port=16789, log_level="error")
-
 
 t = threading.Thread(target=start, daemon=True)
 t.start()
@@ -41,7 +29,10 @@ print(f"1. Login page: {resp.status} CSRF: {bool(csrf)}")
 
 # 2. POST login
 data = urllib.parse.urlencode({"username": "doctor", "password": "test1234", "csrf_token": csrf})
-conn.request("POST", "/login", data, {"Content-Type": "application/x-www-form-urlencoded", "Cookie": f"csrf_token={csrf}"})
+conn.request("POST", "/login", data, {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Cookie": f"csrf_token={csrf}"
+})
 resp = conn.getresponse()
 body = resp.read().decode()
 session = ""
@@ -68,9 +59,10 @@ for c in checks:
     print(f"   Contains '{c}': {c in body}")
 
 # 4. POST create link
-conn.request(
-    "POST", "/doctor/links", urllib.parse.urlencode({"csrf_token": csrf}), {"Content-Type": "application/x-www-form-urlencoded", "Cookie": session + "; csrf_token=" + csrf}
-)
+conn.request("POST", "/doctor/links", urllib.parse.urlencode({"csrf_token": csrf}), {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Cookie": session + "; csrf_token=" + csrf
+})
 resp = conn.getresponse()
 body = resp.read().decode()
 print(f"4. Create link: {resp.status}")

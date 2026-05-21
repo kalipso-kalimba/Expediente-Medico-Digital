@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import csv
+import json
 import hashlib
 import hmac
-import io
-import json
 import logging
 import mimetypes
 import os
@@ -21,13 +19,17 @@ from pathlib import Path
 from typing import Any
 
 import passlib.hash as passlib_hash
+
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
-from app.pdf_generator import build_pdf
-from app.storage import INCOMPLETE_FILES_ROOT, PATIENT_FILES_ROOT, StorageError, storage
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image as RLImage
+from reportlab.lib import colors
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "database"
 EXPEDIENTES_DIR = BASE_DIR / "Expediente de pacientes"
 TRASH_DIR = BASE_DIR / "papelera"
+STORAGE_DIR = BASE_DIR / "storage"
 DB_PATH = DATA_DIR / "app.db"
 LOCATIONS_PATH = DATA_DIR / "costa_rica_locations.json"
 APP_ENV = os.getenv("APP_ENV", "local").lower()
@@ -45,7 +48,7 @@ DOCTOR_PASSWORD = os.getenv("DOCTOR_PASSWORD", "")
 COOKIE_SECURE = os.getenv("APP_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 TSE_LOOKUP_ENABLED = os.getenv("TSE_LOOKUP_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
-DEFAULT_PASSWORD = "usuariodoctor"  # noqa: S105
+DEFAULT_PASSWORD = "usuariodoctor"
 SESSION_COOKIE = "doctor_session"
 CSRF_COOKIE = "csrf_token"
 TSE_RATE_LIMIT: dict[str, list[float]] = {}
@@ -58,17 +61,14 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(exist_ok=True)
+    EXPEDIENTES_DIR.mkdir(parents=True, exist_ok=True)
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        storage.mkdir(PATIENT_FILES_ROOT)
-        storage.mkdir(INCOMPLETE_FILES_ROOT)
-    except StorageError:
-        EXPEDIENTES_DIR.mkdir(parents=True, exist_ok=True)
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def migrate_admin() -> None:
     with db() as conn:
-        existing = conn.execute("SELECT id, role, is_active, must_change_password, deleted_at FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()
+        existing = conn.execute("SELECT id, role, is_active, must_change_password FROM users WHERE username = ?", (DOCTOR_USERNAME,)).fetchone()
         if not existing and DOCTOR_PASSWORD:
             hashed = passlib_hash.bcrypt.hash(DOCTOR_PASSWORD)
             conn.execute(
@@ -80,15 +80,15 @@ def migrate_admin() -> None:
         elif existing:
             admin_id = existing["id"]
             updates = []
-            if existing["role"] != "admin" or not existing["is_active"] or existing["deleted_at"]:
-                updates.append("role = 'admin', is_active = 1, deleted_at = NULL")
+            if existing["role"] != "admin" or not existing["is_active"]:
+                updates.append("role = 'admin', is_active = 1")
             if existing["must_change_password"]:
                 updates.append("must_change_password = 0")
             if updates:
                 updates.append("updated_at = ?")
                 params = (datetime.now().isoformat(), admin_id)
                 conn.execute(
-                    "UPDATE users SET {} WHERE id = ?".format(", ".join(updates)),  # noqa: S608
+                    "UPDATE users SET {} WHERE id = ?".format(", ".join(updates)),
                     params,
                 )
                 logger.info("Admin user '%s' updated.", DOCTOR_USERNAME)
@@ -159,14 +159,6 @@ def doctor_folder_name(username: str) -> str:
 
 def doctor_expedientes_dir(username: str) -> Path:
     return EXPEDIENTES_DIR / doctor_folder_name(username)
-
-
-def doctor_storage_key(username: str) -> str:
-    return f"{PATIENT_FILES_ROOT}/{doctor_folder_name(username)}"
-
-
-def doctor_incomplete_key(username: str) -> str:
-    return f"{INCOMPLETE_FILES_ROOT}/{doctor_folder_name(username)}"
 
 
 def get_doctor_username(doctor_id: int) -> str:
@@ -250,12 +242,6 @@ def init_db() -> None:
             conn.execute("ALTER TABLE links ADD COLUMN patient_id INTEGER REFERENCES patients(id)")
         if "source" not in link_columns:
             conn.execute("ALTER TABLE links ADD COLUMN source TEXT NOT NULL DEFAULT 'remote'")
-        if "status" not in link_columns:
-            conn.execute("ALTER TABLE links ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'")
-        if "draft_payload_json" not in link_columns:
-            conn.execute("ALTER TABLE links ADD COLUMN draft_payload_json TEXT")
-        if "updated_at" not in link_columns:
-            conn.execute("ALTER TABLE links ADD COLUMN updated_at TEXT")
 
         encounter_columns = {row["name"] for row in conn.execute("PRAGMA table_info(encounters)").fetchall()}
         if "encounter_folder_path" not in encounter_columns:
@@ -322,11 +308,10 @@ def split_patient_folder_name(folder_name: str) -> tuple[str, str] | None:
     return full_name.strip(), identification.strip()
 
 
-def _scan_for_expedientes(root_path: Path) -> None:
-    if not root_path.is_dir():
-        return
+def sync_existing_expedientes() -> None:
+    ensure_dirs()
     with db() as conn:
-        for folder in sorted(root_path.iterdir()):
+        for folder in EXPEDIENTES_DIR.iterdir():
             if not folder.is_dir():
                 continue
             parsed = split_patient_folder_name(folder.name)
@@ -382,20 +367,6 @@ def _scan_for_expedientes(root_path: Path) -> None:
                     continue
                 for pdf_path in subfolder.glob("*.pdf"):
                     import_pdf(pdf_path, subfolder)
-
-
-def sync_existing_expedientes() -> None:
-    ensure_dirs()
-    if EXPEDIENTES_DIR.exists():
-        _scan_for_expedientes(EXPEDIENTES_DIR)
-    try:
-        storage_root_path = storage.resolve("")
-        if storage_root_path != EXPEDIENTES_DIR and storage_root_path.exists():
-            patient_root = storage_root_path / PATIENT_FILES_ROOT
-            if patient_root.exists():
-                _scan_for_expedientes(patient_root)
-    except (StorageError, Exception):  # noqa: S110
-        pass
 
 
 def set_private_cookie(response: RedirectResponse | HTMLResponse, name: str, value: str) -> None:
@@ -498,13 +469,14 @@ def validate_location_selection(province_code: str, province_name: str, canton_c
         return False
     if locality_code:
         return bool(district and district["name"] == locality_name)
-    return bool(locality_name.strip() and not any(char in locality_name for char in "<>\x00"))
+    return bool(
+        locality_name.strip()
+        and not any(char in locality_name for char in "<>\x00")
+    )
 
 
 def link_status(link: sqlite3.Row | dict[str, Any], now: datetime | None = None) -> str:
     now = now or datetime.now()
-    if link["status"] == "in_progress":
-        return "Incompleto"
     if link["canceled_at"]:
         return "Cancelado"
     if link["used_at"]:
@@ -516,23 +488,15 @@ def link_status(link: sqlite3.Row | dict[str, Any], now: datetime | None = None)
     return "Disponible"
 
 
-def protected_storage_path(key: str) -> Path:
-    try:
-        return storage.resolve(key)
-    except StorageError:
-        pass
-    path = Path(key)
+def protected_storage_path(path_value: str) -> Path:
+    path = Path(path_value)
     if not path.exists() or EXPEDIENTES_DIR not in path.resolve().parents:
         raise HTTPException(404, "Archivo no disponible")
     return path
 
 
-def deletable_storage_path(key: str) -> Path | None:
-    try:
-        return storage.resolve(key)
-    except StorageError:
-        pass
-    path = Path(key)
+def deletable_storage_path(path_value: str) -> Path | None:
+    path = Path(path_value)
     try:
         resolved = path.resolve()
     except OSError:
@@ -542,24 +506,12 @@ def deletable_storage_path(key: str) -> Path | None:
     return resolved
 
 
-def delete_encounter_file(key: str, destination_dir_key: str = "") -> str | None:
-    try:
-        resolved = storage.resolve(key)
-        if resolved.exists() and resolved.is_file():
-            if destination_dir_key:
-                storage.move_to(key, destination_dir_key)
-            else:
-                storage.move_to(key, trash_scope_dir("archivo eliminado sin contexto").name)
-            return str(resolved.parent)
-        return str(resolved.parent) if resolved else None
-    except StorageError:
-        pass
-    path = deletable_storage_path(key)
+def delete_encounter_file(path_value: str, destination_dir: Path | None = None) -> Path | None:
+    path = deletable_storage_path(path_value)
     if path and path.exists() and path.is_file():
-        dest = Path(destination_dir_key) if destination_dir_key else trash_scope_dir("archivo eliminado sin contexto")
-        move_to_trash(path, dest)
-        return str(path.parent)
-    return str(path.parent) if path else None
+        move_to_trash(path, destination_dir or trash_scope_dir("archivo eliminado sin contexto"))
+        return path.parent
+    return path.parent if path else None
 
 
 def trash_scope_dir(reason: str) -> Path:
@@ -575,11 +527,6 @@ def move_to_trash(path: Path, destination_dir: Path) -> Path | None:
     target = available_path(destination_dir / path.name)
     shutil.move(str(path), str(target))
     return target
-
-
-def _execute_sql(conn, base_sql: str, where_clause: str, params: list) -> sqlite3.Cursor:
-    full_sql = base_sql + " " + where_clause if where_clause else base_sql
-    return conn.execute(full_sql, params)
 
 
 def safe_name(value: str) -> str:
@@ -625,8 +572,8 @@ def lookup_tse_public_data(cedula: str) -> dict[str, str] | None:
     query = urllib.parse.urlencode({"cedula": cedula})
     url = f"https://servicioselectorales.tse.go.cr/chc/consulta_cedula.aspx?{query}"
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "ExpedienteMedicoDigital/1.0"})  # noqa: S310
-        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+        request = urllib.request.Request(url, headers={"User-Agent": "ExpedienteMedicoDigital/1.0"})
+        with urllib.request.urlopen(request, timeout=5) as response:
             html = response.read(200_000).decode("utf-8", errors="ignore")
     except Exception:
         logger.exception("No fue posible consultar datos publicos del TSE para una cedula normalizada")
@@ -643,16 +590,10 @@ def lookup_tse_public_data(cedula: str) -> dict[str, str] | None:
     return {"full_name": full_name}
 
 
-def save_upload(upload: UploadFile, destination: Path | str) -> None:
+def save_upload(upload: UploadFile, destination: Path) -> None:
     allowed = {"image/jpeg", "image/png", "image/webp"}
     if upload.content_type not in allowed:
         raise HTTPException(400, "Solo se permiten imagenes JPG, PNG o WEBP")
-    if isinstance(destination, str):
-        try:
-            storage.save_fileobj(destination, upload.file, max_size=8 * 1024 * 1024)
-            return
-        except StorageError:
-            raise HTTPException(400, "Cada imagen debe pesar maximo 8 MB")
     with destination.open("wb") as out:
         shutil.copyfileobj(upload.file, out)
     if destination.stat().st_size > 8 * 1024 * 1024:
@@ -674,7 +615,177 @@ def available_path(path: Path) -> Path:
     raise HTTPException(500, "No se pudo crear un nombre de archivo disponible")
 
 
-# build_pdf moved to app/pdf_generator.py
+def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path: Path, source: str = "remote") -> None:
+    styles = getSampleStyleSheet()
+    section_style = ParagraphStyle("SectionTitle", parent=styles["Heading2"], fontSize=10, textColor=colors.HexColor("#1f3a5f"), spaceBefore=12, spaceAfter=4)
+    small_style = ParagraphStyle("SmallText", parent=styles["Normal"], fontSize=7.5, leading=9, textColor=colors.HexColor("#555555"))
+    cell_style = ParagraphStyle("CellText", parent=styles["Normal"], fontSize=7.5, leading=9)
+    label_style = ParagraphStyle("LabelText", parent=cell_style, textColor=colors.HexColor("#333333"))
+    value_style = ParagraphStyle("ValueText", parent=cell_style, textColor=colors.HexColor("#111111"))
+    obs_hint = ParagraphStyle("ObsHint", parent=styles["Normal"], fontSize=7, textColor=colors.HexColor("#999999"))
+    story = []
+
+    story.append(Spacer(1, 4))
+
+    # Header bar
+    header_data = [[
+        Paragraph("Expediente M\u00e9dico Digital", ParagraphStyle("H", fontSize=13, textColor=colors.white, fontName="Helvetica-Bold", spaceAfter=0, leading=16)),
+        Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ParagraphStyle("HD", fontSize=7.5, textColor=colors.white, alignment=2, spaceAfter=0, leading=10)),
+    ]]
+    ht = Table(header_data, colWidths=[300, 210])
+    ht.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#1f3a5f")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (0, 0), 12),
+        ("RIGHTPADDING", (-1, -1), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(ht)
+    story.append(Spacer(1, 6))
+
+    # Disclaimer
+    disclaimer = (
+        "La informaci\u00f3n contenida en este documento corresponde exclusivamente a los datos "
+        "proporcionados por el paciente mediante formulario. El paciente declara que los datos "
+        "suministrados son reales, correctos y completos. Adem\u00e1s, dicha informaci\u00f3n ser\u00e1 "
+        "revisada, verificada y valorada por el m\u00e9dico antes de emitir cualquier criterio cl\u00ednico, "
+        "diagn\u00f3stico o decisi\u00f3n m\u00e9dica."
+    )
+    story.append(Paragraph(disclaimer, small_style))
+    origin_text = "Origen del formulario: Atenci\u00f3n presencial." if source == "in_person" else "Origen del formulario: Enlace enviado al paciente."
+    story.append(Paragraph(origin_text, small_style))
+    story.append(Spacer(1, 10))
+
+    # Field definitions
+    labels = {
+        "nationality": "Nacionalidad",
+        "id_type": "Tipo de identificaci\u00f3n",
+        "identification": "Identificaci\u00f3n",
+        "full_name": "Nombre completo",
+        "whatsapp": "WhatsApp",
+        "email": "Email",
+        "age": "Edad",
+        "birth_date": "Fecha de nacimiento",
+        "civil_status": "Estado civil",
+        "profession": "Profesi\u00f3n u oficio",
+        "province": "Provincia",
+        "canton": "Cant\u00f3n",
+        "district_or_locality": "Distrito, barrio o localidad",
+        "exact_address": "Otras se\u00f1as",
+        "organ_donor": "Donador de \u00f3rganos",
+        "has_illness": "Padece enfermedades",
+        "illnesses": "Enfermedades",
+        "treatments": "Medicamentos o tratamientos",
+        "smokes": "Fuma",
+        "smoke_frequency": "Frecuencia fumado",
+        "smoke_product": "Producto fumado",
+        "drinks": "Toma licor",
+        "drink_frequency": "Consumo de licor",
+        "uses_drugs": "Consume drogas",
+        "drug_type": "Tipo de droga",
+        "drug_frequency": "Frecuencia droga",
+        "weight": "Peso",
+        "height": "Estatura",
+        "uses_glasses": "Usa lentes",
+        "glasses_use": "Uso de lentes",
+        "laterality": "Lateralidad",
+        "license_types": "Tipos de licencia",
+        "truth_declaration": "Declaraci\u00f3n de veracidad",
+    }
+    general_keys = [
+        "full_name", "identification", "id_type", "nationality", "age", "birth_date",
+        "civil_status", "profession", "whatsapp", "email",
+        "province", "canton", "district_or_locality", "exact_address",
+    ]
+    medical_keys = [
+        "organ_donor", "has_illness", "illnesses", "treatments",
+        "smokes", "smoke_frequency", "smoke_product",
+        "drinks", "drink_frequency",
+        "uses_drugs", "drug_type", "drug_frequency",
+        "weight", "height", "uses_glasses", "glasses_use", "laterality",
+        "license_types", "truth_declaration",
+    ]
+
+    def make_table(keys: list[str]) -> Table:
+        rows = [
+            [
+                Paragraph("Campo", ParagraphStyle("Th", parent=cell_style, textColor=colors.white, fontName="Helvetica-Bold")),
+                Paragraph("Respuesta", ParagraphStyle("Th", parent=cell_style, textColor=colors.white, fontName="Helvetica-Bold")),
+            ]
+        ]
+        for k in keys:
+            v = data.get(k, "")
+            if isinstance(v, list):
+                v = ", ".join(v)
+            rows.append([
+                Paragraph(labels.get(k, k), label_style),
+                Paragraph(str(v or "No indicado"), value_style),
+            ])
+        t = Table(rows, colWidths=[145, 365])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#d0d7de")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6f8fa")]),
+        ]))
+        return t
+
+    # Section: Datos generales
+    story.append(Paragraph("Datos generales del paciente", section_style))
+    story.append(make_table(general_keys))
+    story.append(Spacer(1, 10))
+
+    # Section: Informacion medica
+    story.append(Paragraph("Informaci\u00f3n m\u00e9dica", section_style))
+    story.append(make_table(medical_keys))
+    story.append(Spacer(1, 14))
+
+    # Section: ID photos
+    story.append(Paragraph("Documento de identificaci\u00f3n aportado por el paciente", section_style))
+    story.append(Spacer(1, 6))
+    try:
+        img_w = 200
+        img_h = 140
+        if front_path.exists() and back_path.exists():
+            fi = RLImage(str(front_path), width=img_w, height=img_h, kind="proportional")
+            bi = RLImage(str(back_path), width=img_w, height=img_h, kind="proportional")
+            pt = Table(
+                [
+                    [Paragraph("Frontal", ParagraphStyle("FL", parent=styles["Normal"], fontSize=8, alignment=1)),
+                     Paragraph("Trasera", ParagraphStyle("FL", parent=styles["Normal"], fontSize=8, alignment=1))],
+                    [fi, bi],
+                ],
+                colWidths=[img_w + 30, img_w + 30],
+            )
+            pt.setStyle(TableStyle([
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]))
+            story.append(pt)
+        else:
+            if front_path.exists():
+                story.append(Paragraph("Frontal", ParagraphStyle("FL", fontSize=8)))
+                story.append(RLImage(str(front_path), width=img_w, height=img_h, kind="proportional"))
+            if back_path.exists():
+                story.append(Paragraph("Trasera", ParagraphStyle("FL", fontSize=8)))
+                story.append(RLImage(str(back_path), width=img_w, height=img_h, kind="proportional"))
+    except Exception:
+        logger.exception("Error al incluir im\u00e1genes de identificaci\u00f3n en el PDF")
+
+    story.append(Spacer(1, 14))
+    story.append(Paragraph("Observaciones del m\u00e9dico", section_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("_" * 65, small_style))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph("Espacio reservado para anotaciones, diagn\u00f3stico y recomendaciones del m\u00e9dico.", obs_hint))
+
+    SimpleDocTemplate(str(pdf_path), pagesize=letter, rightMargin=36, leftMargin=36, topMargin=28, bottomMargin=28).build(story)
 
 
 @app.get("/health")
@@ -816,15 +927,6 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: st
                 """,
                 (today_start.isoformat(), tomorrow_start.isoformat()),
             ).fetchall()
-            drafts_raw = conn.execute(
-                """
-                SELECT l.*, u.username AS doctor_username
-                FROM links l
-                LEFT JOIN users u ON l.doctor_id = u.id
-                WHERE l.source = 'in_person' AND l.status = 'in_progress'
-                ORDER BY l.updated_at DESC
-                """,
-            ).fetchall()
         else:
             links_raw = conn.execute(
                 """
@@ -847,107 +949,19 @@ def doctor_panel(request: Request, user: dict = Depends(require_doctor), msg: st
                 """,
                 (user["id"], today_start.isoformat(), tomorrow_start.isoformat()),
             ).fetchall()
-            drafts_raw = conn.execute(
-                """
-                SELECT l.* FROM links l
-                WHERE l.source = 'in_person' AND l.status = 'in_progress' AND l.doctor_id = ?
-                ORDER BY l.updated_at DESC
-                """,
-                (user["id"],),
-            ).fetchall()
-
-        if user["role"] == "admin":
-            stats_patients = conn.execute("SELECT COUNT(DISTINCT p.identification) AS c FROM patients p JOIN encounters e ON e.patient_id = p.id").fetchone()["c"]
-            stats_forms_today = conn.execute(
-                "SELECT COUNT(*) AS c FROM encounters e WHERE e.created_at >= ? AND e.created_at < ?", (today_start.isoformat(), tomorrow_start.isoformat())
-            ).fetchone()["c"]
-            stats_links_active = conn.execute(
-                "SELECT COUNT(*) AS c FROM links l WHERE l.status != 'completed' AND l.canceled_at IS NULL AND l.expires_at >= ?", (now.isoformat(),)
-            ).fetchone()["c"]
-            stats_drafts = conn.execute("SELECT COUNT(*) AS c FROM links l WHERE l.source = 'in_person' AND l.status = 'in_progress'").fetchone()["c"]
-            recent = conn.execute("""
-                SELECT e.id, e.created_at, e.source, p.full_name, p.identification,
-                       u.username AS doctor_username
-                FROM encounters e
-                JOIN patients p ON p.id = e.patient_id
-                LEFT JOIN users u ON e.doctor_id = u.id
-                ORDER BY e.created_at DESC LIMIT 5
-            """).fetchall()
-        else:
-            stats_patients = conn.execute(
-                "SELECT COUNT(DISTINCT p.identification) AS c FROM patients p JOIN encounters e ON e.patient_id = p.id WHERE e.doctor_id = ?", (user["id"],)
-            ).fetchone()["c"]
-            stats_forms_today = conn.execute(
-                "SELECT COUNT(*) AS c FROM encounters e WHERE e.doctor_id = ? AND e.created_at >= ? AND e.created_at < ?",
-                (user["id"], today_start.isoformat(), tomorrow_start.isoformat()),
-            ).fetchone()["c"]
-            stats_links_active = conn.execute(
-                "SELECT COUNT(*) AS c FROM links l WHERE l.doctor_id = ? AND l.status != 'completed' AND l.canceled_at IS NULL AND l.expires_at >= ?", (user["id"], now.isoformat())
-            ).fetchone()["c"]
-            stats_drafts = conn.execute(
-                "SELECT COUNT(*) AS c FROM links l WHERE l.doctor_id = ? AND l.source = 'in_person' AND l.status = 'in_progress'", (user["id"],)
-            ).fetchone()["c"]
-            recent = conn.execute(
-                """
-                SELECT e.id, e.created_at, e.source, p.full_name, p.identification
-                FROM encounters e
-                JOIN patients p ON p.id = e.patient_id
-                WHERE e.doctor_id = ?
-                ORDER BY e.created_at DESC LIMIT 5
-            """,
-                (user["id"],),
-            ).fetchall()
-
-    stats = {
-        "total_patients": stats_patients,
-        "forms_today": stats_forms_today,
-        "active_links": stats_links_active,
-        "pending_drafts": stats_drafts,
-    }
-    recent_activity = [dict(r) for r in recent]
-
     links = []
     for link in links_raw:
         d = dict(link)
         d["status_es"] = link_status(link)
         links.append(d)
-    drafts = []
-    for draft in drafts_raw:
-        d = dict(draft)
-        d["status_es"] = "Incompleto"
-        payload = {}
-        if d.get("draft_payload_json"):
-            try:
-                payload = json.loads(d["draft_payload_json"])
-            except Exception:
-                payload = {}
-        d["draft_name"] = payload.get("full_name", "") or "Formulario presencial sin nombre"
-        d["draft_identification"] = payload.get("identification", "") or "No indicada"
-        drafts.append(d)
     success_message = ""
     if msg == "password_updated":
         success_message = "Contrase\u00f1a actualizada correctamente."
-    elif msg == "draft_saved":
-        success_message = "Formulario guardado como incompleto. Puede continuarlo cuando lo desee."
-    elif msg == "draft_deleted":
-        success_message = "Formulario incompleto eliminado."
     return template_with_csrf(
-        request,
-        "doctor.html",
-        {
-            "request": request,
-            "links": links,
-            "encounters": encounters_raw,
-            "drafts": drafts,
-            "today": now.date().isoformat(),
-            "username": user["username"],
-            "user": user,
-            "base_url": BASE_URL or str(request.base_url).rstrip("/"),
-            "APP_ENV": APP_ENV,
-            "success_message": success_message,
-            "stats": stats,
-            "recent_activity": recent_activity,
-        },
+        request, "doctor.html",
+        {"request": request, "links": links, "encounters": encounters_raw, "today": now.date().isoformat(),
+         "username": user["username"], "user": user, "base_url": BASE_URL or str(request.base_url).rstrip("/"),
+         "APP_ENV": APP_ENV, "success_message": success_message},
     )
 
 
@@ -976,126 +990,10 @@ def create_in_person_form(request: Request, user: dict = Depends(require_doctor)
     now = datetime.now()
     with db() as conn:
         conn.execute(
-            "INSERT INTO links (token, created_at, expires_at, doctor_id, source, status, updated_at) VALUES (?, ?, ?, ?, 'in_person', 'pending', ?)",
-            (token, now.isoformat(), (now + timedelta(days=1)).isoformat(), user["id"], now.isoformat()),
+            "INSERT INTO links (token, created_at, expires_at, doctor_id, source) VALUES (?, ?, ?, ?, 'in_person')",
+            (token, now.isoformat(), (now + timedelta(days=1)).isoformat(), user["id"]),
         )
     return RedirectResponse(f"/patient/{token}?mode=in_person", status_code=303)
-
-
-@app.post("/patient/{token}/save-draft")
-def save_draft(
-    token: str,
-    request: Request,
-    user: dict = Depends(require_doctor),
-    csrf_token: str = Form(...),
-    nationality: str = Form(""),
-    id_type: str = Form(""),
-    identification: str = Form(""),
-    full_name: str = Form(""),
-    whatsapp: str = Form(""),
-    email: str = Form(""),
-    age: str = Form(""),
-    birth_date: str = Form(""),
-    civil_status: str = Form(""),
-    profession: str = Form(""),
-    province: str = Form(""),
-    province_code: str = Form(""),
-    canton: str = Form(""),
-    canton_code: str = Form(""),
-    district_or_locality: str = Form(""),
-    district_or_locality_code: str = Form(""),
-    exact_address: str = Form(""),
-    organ_donor: str = Form(""),
-    has_illness: str = Form(""),
-    illnesses: str = Form(""),
-    treatments: str = Form(""),
-    smokes: str = Form(""),
-    smoke_frequency: str = Form(""),
-    smoke_product: str = Form(""),
-    drinks: str = Form(""),
-    drink_frequency: str = Form(""),
-    uses_drugs: str = Form(""),
-    drug_type: str = Form(""),
-    drug_frequency: str = Form(""),
-    weight: str = Form(""),
-    height: str = Form(""),
-    uses_glasses: str = Form(""),
-    glasses_use: str = Form(""),
-    laterality: str = Form(""),
-    license_types: list[str] = Form(default=[]),
-    truth_declaration: str = Form(""),
-) -> Response:
-    validate_csrf(request, csrf_token)
-    with db() as conn:
-        link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
-        if not link or link["source"] != "in_person":
-            raise HTTPException(404, "Formulario no encontrado")
-        if user["role"] != "admin" and link["doctor_id"] != user["id"]:
-            raise HTTPException(403, "Acceso denegado.")
-        draft = {
-            "nationality": nationality,
-            "id_type": id_type,
-            "identification": identification,
-            "full_name": full_name,
-            "whatsapp": whatsapp,
-            "email": email,
-            "age": age,
-            "birth_date": birth_date,
-            "civil_status": civil_status,
-            "profession": profession,
-            "province": province,
-            "province_code": province_code,
-            "canton": canton,
-            "canton_code": canton_code,
-            "district_or_locality": district_or_locality,
-            "district_or_locality_code": district_or_locality_code,
-            "exact_address": exact_address,
-            "organ_donor": organ_donor,
-            "has_illness": has_illness,
-            "illnesses": illnesses,
-            "treatments": treatments,
-            "smokes": smokes,
-            "smoke_frequency": smoke_frequency,
-            "smoke_product": smoke_product,
-            "drinks": drinks,
-            "drink_frequency": drink_frequency,
-            "uses_drugs": uses_drugs,
-            "drug_type": drug_type,
-            "drug_frequency": drug_frequency,
-            "weight": weight,
-            "height": height,
-            "uses_glasses": uses_glasses,
-            "glasses_use": glasses_use,
-            "laterality": laterality,
-            "license_types": license_types,
-            "truth_declaration": truth_declaration,
-        }
-        clean = {k: v for k, v in draft.items() if v}
-        conn.execute(
-            "UPDATE links SET draft_payload_json = ?, status = 'in_progress', updated_at = ? WHERE token = ?",
-            (json.dumps(clean, ensure_ascii=True), datetime.now().isoformat(), token),
-        )
-    return RedirectResponse("/doctor?msg=draft_saved", status_code=303)
-
-
-@app.post("/doctor/forms/drafts/{token}/delete")
-def delete_draft(
-    token: str,
-    request: Request,
-    user: dict = Depends(require_doctor),
-    csrf_token: str = Form(...),
-) -> Response:
-    validate_csrf(request, csrf_token)
-    with db() as conn:
-        link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
-        if not link or link["source"] != "in_person":
-            raise HTTPException(404, "Formulario no encontrado")
-        if user["role"] != "admin" and link["doctor_id"] != user["id"]:
-            raise HTTPException(403, "Acceso denegado.")
-        if link["status"] == "completed" or link["used_at"]:
-            raise HTTPException(400, "No puede borrar un formulario ya completado.")
-        conn.execute("DELETE FROM links WHERE token = ?", (token,))
-    return RedirectResponse("/doctor?msg=draft_deleted", status_code=303)
 
 
 @app.post("/doctor/links/{link_id}/delete")
@@ -1189,10 +1087,8 @@ def patient_search(request: Request, query: str = "", identification: str = "", 
             if user["role"] == "admin":
                 results = conn.execute(
                     """
-                    SELECT e.id, e.created_at, p.full_name, p.identification, e.pdf_path, e.front_image_path, e.back_image_path,
-                           u.username AS doctor_username, u.full_name AS doctor_full_name
+                    SELECT e.id, e.created_at, p.full_name, p.identification, e.pdf_path, e.front_image_path, e.back_image_path
                     FROM encounters e JOIN patients p ON p.id = e.patient_id
-                    LEFT JOIN users u ON e.doctor_id = u.id
                     WHERE p.identification = ?
                        OR UPPER(REPLACE(REPLACE(REPLACE(p.identification, '-', ''), ' ', ''), '.', '')) LIKE ?
                        OR LOWER(p.full_name) LIKE ?
@@ -1215,257 +1111,12 @@ def patient_search(request: Request, query: str = "", identification: str = "", 
     return template_with_csrf(
         request,
         "patient_search.html",
-        {"request": request, "query": raw, "results": results, "searched": searched, "user": user},
+        {"request": request, "query": raw, "results": results, "searched": searched},
     )
-
-
-@app.get("/doctor/patients", response_class=HTMLResponse)
-def patients_list(
-    request: Request,
-    user: dict = Depends(require_doctor),
-    page: int = 1,
-    q: str = "",
-    ident: str = "",
-    date_from: str = "",
-    date_to: str = "",
-    source: str = "",
-) -> HTMLResponse:
-    per_page = 25
-    if page < 1:
-        page = 1
-    offset = (page - 1) * per_page
-
-    conditions = []
-    params = []
-
-    if user["role"] != "admin":
-        conditions.append("e.doctor_id = ?")
-        params.append(user["id"])
-
-    q_raw = (q or ident).strip()
-    if q_raw:
-        like_pattern = f"%{q_raw}%"
-        normalized = normalize_identification_lookup(q_raw)
-        conditions.append("(p.identification = ? OR UPPER(REPLACE(REPLACE(REPLACE(p.identification, '-', ''), ' ', ''), '.', '')) LIKE ? OR LOWER(p.full_name) LIKE ?)")
-        params.extend([q_raw, f"%{normalized}%", like_pattern.lower()])
-
-    if date_from:
-        conditions.append("MAX(e.created_at) >= ?")
-        params.append(date_from)
-    if date_to:
-        conditions.append("MAX(e.created_at) <= ?")
-        params.append(date_to + "T23:59:59")
-    if source in ("in_person", "remote"):
-        conditions.append("last_source = ?")
-        params.append(source)
-
-    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-
-    with db() as conn:
-        base_count = "SELECT COUNT(*) AS total FROM (SELECT p.identification FROM patients p JOIN encounters e ON e.patient_id = p.id"
-        suffix_count = " GROUP BY p.doctor_id, p.identification) AS sub"
-        full_sql = base_count + " " + where_clause + suffix_count if where_clause else base_count + suffix_count
-        count_row = conn.execute(full_sql, params).fetchone()
-        total = count_row["total"] if count_row else 0
-
-        base = "SELECT p.identification, p.full_name, p.doctor_id, COUNT(e.id) AS form_count, MAX(e.created_at) AS last_attention, (SELECT e2.source FROM encounters e2 WHERE e2.doctor_id = p.doctor_id AND e2.patient_id = p.id ORDER BY e2.created_at DESC LIMIT 1) AS last_source, (SELECT e2.id FROM encounters e2 WHERE e2.doctor_id = p.doctor_id AND e2.patient_id = p.id ORDER BY e2.created_at DESC LIMIT 1) AS last_encounter_id, (SELECT e2.pdf_path FROM encounters e2 WHERE e2.doctor_id = p.doctor_id AND e2.patient_id = p.id ORDER BY e2.created_at DESC LIMIT 1) AS last_pdf_path FROM patients p JOIN encounters e ON e.patient_id = p.id"
-        suffix = " GROUP BY p.doctor_id, p.identification ORDER BY last_attention DESC LIMIT ? OFFSET ?"
-        full_sql = base + " " + where_clause + suffix if where_clause else base + suffix
-        patients_raw = conn.execute(full_sql, params + [per_page, offset]).fetchall()
-
-    # Enrich with whatsapp/email from last encounter's payload
-    patients = []
-    for p in patients_raw:
-        d = dict(p)
-        if d["last_encounter_id"]:
-            with db() as conn:
-                enc_row = conn.execute(
-                    "SELECT payload FROM encounters WHERE id = ?",
-                    (d["last_encounter_id"],),
-                ).fetchone()
-            if enc_row:
-                payload = json.loads(enc_row["payload"])
-                d["whatsapp"] = payload.get("whatsapp", "")
-                d["email"] = payload.get("email", "")
-        patients.append(d)
-
-    # Doctor names for admin
-    doctor_map = {}
-    if user["role"] == "admin":
-        with db() as conn:
-            docs = conn.execute("SELECT id, username, full_name FROM users WHERE role IN ('admin','doctor')").fetchall()
-            for doc in docs:
-                doctor_map[doc["id"]] = doc["full_name"] or doc["username"]
-
-    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
-
-    return template_with_csrf(
-        request,
-        "patients_list.html",
-        {
-            "request": request,
-            "patients": patients,
-            "page": page,
-            "total_pages": total_pages,
-            "total": total,
-            "per_page": per_page,
-            "q": q,
-            "ident": ident,
-            "date_from": date_from,
-            "date_to": date_to,
-            "source": source,
-            "doctor_map": doctor_map,
-            "user": user,
-        },
-    )
-
-
-@app.get("/doctor/forms/completed", response_class=HTMLResponse)
-def forms_completed_list(
-    request: Request,
-    user: dict = Depends(require_doctor),
-    page: int = 1,
-    q: str = "",
-    ident: str = "",
-    date_from: str = "",
-    date_to: str = "",
-    source: str = "",
-) -> HTMLResponse:
-    per_page = 25
-    if page < 1:
-        page = 1
-    offset = (page - 1) * per_page
-
-    conditions = []
-    params = []
-
-    if user["role"] != "admin":
-        conditions.append("e.doctor_id = ?")
-        params.append(user["id"])
-
-    q_raw = (q or ident).strip()
-    if q_raw:
-        like_pattern = f"%{q_raw}%"
-        normalized = normalize_identification_lookup(q_raw)
-        conditions.append("(p.identification = ? OR UPPER(REPLACE(REPLACE(REPLACE(p.identification, '-', ''), ' ', ''), '.', '')) LIKE ? OR LOWER(p.full_name) LIKE ?)")
-        params.extend([q_raw, f"%{normalized}%", like_pattern.lower()])
-
-    if date_from:
-        conditions.append("e.created_at >= ?")
-        params.append(date_from)
-    if date_to:
-        conditions.append("e.created_at <= ?")
-        params.append(date_to + "T23:59:59")
-    if source in ("in_person", "remote"):
-        conditions.append("e.source = ?")
-        params.append(source)
-
-    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-
-    with db() as conn:
-        total_row = _execute_sql(
-            conn,
-            "SELECT COUNT(*) AS total FROM encounters e JOIN patients p ON p.id = e.patient_id",
-            where_clause,
-            params,
-        ).fetchone()
-        total = total_row["total"] if total_row else 0
-
-        base = "SELECT e.id, e.created_at, e.source, e.pdf_path, e.front_image_path, e.back_image_path, p.full_name, p.identification, u.username AS doctor_username, u.full_name AS doctor_full_name FROM encounters e JOIN patients p ON p.id = e.patient_id LEFT JOIN users u ON e.doctor_id = u.id"
-        suffix = " ORDER BY e.created_at DESC LIMIT ? OFFSET ?"
-        full_sql = base + " " + where_clause + suffix if where_clause else base + suffix
-        forms_raw = conn.execute(full_sql, params + [per_page, offset]).fetchall()
-
-    forms = [dict(r) for r in forms_raw]
-    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
-
-    return template_with_csrf(
-        request,
-        "forms_completed_list.html",
-        {
-            "request": request,
-            "forms": forms,
-            "page": page,
-            "total_pages": total_pages,
-            "total": total,
-            "per_page": per_page,
-            "q": q,
-            "ident": ident,
-            "date_from": date_from,
-            "date_to": date_to,
-            "source": source,
-            "user": user,
-        },
-    )
-
-
-@app.get("/doctor/patients/export")
-def patients_export(request: Request, user: dict = Depends(require_doctor)) -> Response:
-    with db() as conn:
-        if user["role"] == "admin":
-            rows = conn.execute("""
-                SELECT p.identification, p.full_name, COUNT(e.id) AS form_count,
-                       MAX(e.created_at) AS last_attention
-                FROM patients p
-                JOIN encounters e ON e.patient_id = p.id
-                GROUP BY p.doctor_id, p.identification
-                ORDER BY last_attention DESC
-            """).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT p.identification, p.full_name, COUNT(e.id) AS form_count,
-                       MAX(e.created_at) AS last_attention
-                FROM patients p
-                JOIN encounters e ON e.patient_id = p.id
-                WHERE e.doctor_id = ?
-                GROUP BY p.doctor_id, p.identification
-                ORDER BY last_attention DESC
-            """,
-                (user["id"],),
-            ).fetchall()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Identificacion", "Nombre completo", "Atenciones", "Ultima atencion"])
-    for r in rows:
-        writer.writerow([r["identification"], r["full_name"], r["form_count"], r["last_attention"]])
-    return Response(content=output.getvalue(), media_type="text/csv; charset=utf-8-sig", headers={"Content-Disposition": "attachment; filename=pacientes.csv"})
-
-
-@app.get("/doctor/forms/completed/export")
-def forms_export(request: Request, user: dict = Depends(require_doctor)) -> Response:
-    with db() as conn:
-        if user["role"] == "admin":
-            rows = conn.execute("""
-                SELECT p.identification, p.full_name, e.created_at, e.source,
-                       u.username AS doctor_username
-                FROM encounters e
-                JOIN patients p ON p.id = e.patient_id
-                LEFT JOIN users u ON e.doctor_id = u.id
-                ORDER BY e.created_at DESC
-            """).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT p.identification, p.full_name, e.created_at, e.source
-                FROM encounters e
-                JOIN patients p ON p.id = e.patient_id
-                WHERE e.doctor_id = ?
-                ORDER BY e.created_at DESC
-            """,
-                (user["id"],),
-            ).fetchall()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Identificacion", "Nombre completo", "Fecha", "Tipo", "Medico"])
-    for r in rows:
-        writer.writerow([r["identification"], r["full_name"], r["created_at"], r["source"], r.get("doctor_username", "")])
-    return Response(content=output.getvalue(), media_type="text/csv; charset=utf-8-sig", headers={"Content-Disposition": "attachment; filename=formularios.csv"})
 
 
 @app.get("/patient/{token}", response_class=HTMLResponse)
 def patient_form(token: str, request: Request, mode: str = "") -> HTMLResponse:
-    user = current_user(request)
     with db() as conn:
         link = conn.execute("SELECT * FROM links WHERE token = ?", (token,)).fetchone()
         if link and not link["opened_at"] and not link["used_at"] and not link["canceled_at"] and datetime.fromisoformat(link["expires_at"]) >= datetime.now():
@@ -1474,24 +1125,7 @@ def patient_form(token: str, request: Request, mode: str = "") -> HTMLResponse:
     if not link or link["used_at"] or link["canceled_at"] or datetime.fromisoformat(link["expires_at"]) < datetime.now():
         return link_unavailable(request)
     is_in_person = mode == "in_person" or link["source"] == "in_person"
-    is_authenticated = user is not None
-    draft_payload = {}
-    if link["draft_payload_json"]:
-        try:
-            draft_payload = json.loads(link["draft_payload_json"])
-        except Exception:
-            draft_payload = {}
-    return template_with_csrf(
-        request,
-        "patient.html",
-        {
-            "request": request,
-            "token": token,
-            "is_in_person": is_in_person,
-            "is_authenticated": is_authenticated,
-            "draft_payload": draft_payload,
-        },
-    )
+    return template_with_csrf(request, "patient.html", {"request": request, "token": token, "is_in_person": is_in_person})
 
 
 @app.post("/patient/{token}/submit")
@@ -1598,7 +1232,7 @@ def submit_form(
     clean_full_name = safe_name(full_name)
     clean_id = safe_name(identification)
     doc_username = get_doctor_username(doctor_id)
-    doc_key = doctor_storage_key(doc_username)
+    doc_dir = doctor_expedientes_dir(doc_username)
 
     with db() as conn:
         existing_patient = conn.execute(
@@ -1607,26 +1241,24 @@ def submit_form(
         ).fetchone()
 
     folder_name = existing_patient["folder_name"] if existing_patient else f"{clean_full_name} - {clean_id}"
-    safe_folder = safe_name(folder_name)
-    patient_key = f"{doc_key}/{safe_folder}"
+    patient_folder = doc_dir / safe_name(folder_name)
+    patient_folder.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
     date_prefix = now.strftime("%Y-%m-%d")
     time_prefix = now.strftime("%H-%M")
     encounter_folder_name = f"{date_prefix} - {time_prefix} - Atenci\u00f3n"
-    encounter_key = f"{patient_key}/{encounter_folder_name}"
+    encounter_folder = patient_folder / encounter_folder_name
+    encounter_folder.mkdir(parents=True, exist_ok=True)
 
-    front_name = f"{date_prefix} - cedula-frontal - {clean_full_name} - {clean_id}{image_extension(cedula_front)}"
-    back_name = f"{date_prefix} - cedula-trasera - {clean_full_name} - {clean_id}{image_extension(cedula_back)}"
-    pdf_name = f"{date_prefix} - {clean_full_name} - {clean_id}.pdf"
+    base_doc_name = f"{date_prefix} - {clean_full_name} - {clean_id}"
+    front_path = available_path(encounter_folder / f"{date_prefix} - cedula-frontal - {clean_full_name} - {clean_id}{image_extension(cedula_front)}")
+    back_path = available_path(encounter_folder / f"{date_prefix} - cedula-trasera - {clean_full_name} - {clean_id}{image_extension(cedula_back)}")
+    pdf_path = available_path(encounter_folder / f"{base_doc_name}.pdf")
 
-    front_key = f"{encounter_key}/{front_name}"
-    back_key = f"{encounter_key}/{back_name}"
-    pdf_key = f"{encounter_key}/{pdf_name}"
-
-    save_upload(cedula_front, front_key)
-    save_upload(cedula_back, back_key)
-    build_pdf(pdf_key, data, front_key, back_key, form_source)
+    save_upload(cedula_front, front_path)
+    save_upload(cedula_back, back_path)
+    build_pdf(pdf_path, data, front_path, back_path, form_source)
 
     try:
         with db() as conn:
@@ -1643,25 +1275,11 @@ def submit_form(
                 INSERT INTO encounters (patient_id, token, payload, pdf_path, front_image_path, back_image_path, encounter_folder_path, created_at, doctor_id, source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    patient_id,
-                    token,
-                    json.dumps(data, ensure_ascii=True),
-                    pdf_key,
-                    front_key,
-                    back_key,
-                    encounter_key,
-                    datetime.now().isoformat(),
-                    doctor_id,
-                    form_source,
-                ),
+                (patient_id, token, json.dumps(data, ensure_ascii=True), str(pdf_path), str(front_path), str(back_path), str(encounter_folder), datetime.now().isoformat(), doctor_id, form_source),
             )
-            conn.execute(
-                "UPDATE links SET used_at = ?, patient_id = ?, status = 'completed', updated_at = ? WHERE token = ?",
-                (datetime.now().isoformat(), patient_id, datetime.now().isoformat(), token),
-            )
+            conn.execute("UPDATE links SET used_at = ?, patient_id = ? WHERE token = ?", (datetime.now().isoformat(), patient_id, token))
     except Exception:
-        logger.exception("Error registrando la atencion despues de generar el PDF: %s", pdf_key)
+        logger.exception("Error registrando la atencion despues de generar el PDF: %s", pdf_path)
 
     thank_you_mode = "in_person" if form_source == "in_person" else ""
     return RedirectResponse(f"/thank-you?mode={thank_you_mode}", status_code=303)
@@ -1707,57 +1325,33 @@ def delete_encounter(encounter_id: int, request: Request, user: dict = Depends(r
     if not encounter:
         return RedirectResponse("/doctor", status_code=303)
     with db() as conn:
-        enc_key = encounter.get("encounter_folder_path") or ""
-        if enc_key:
-            try:
-                if storage.is_dir(enc_key):
-                    trash_name = trash_scope_dir(f"atencion {encounter_id}").name
-                    storage.move(enc_key, f"papelera/{trash_name}/{Path(enc_key).name}")
-                    parent_key = str(Path(enc_key).parent)
-                    try:
-                        if parent_key and storage.is_dir(parent_key) and not any(p for p in [Path(enc_key)]):
-                            pass
-                    except OSError:
-                        logger.exception("No se pudo eliminar carpeta vacia de expediente: %s", enc_key)
-            except (StorageError, OSError):
-                # Fall back to legacy delete
+
+        trash_dir = trash_scope_dir(f"atencion {encounter_id}")
+
+        if encounter["encounter_folder_path"]:
+            enc_folder = Path(encounter["encounter_folder_path"])
+            if enc_folder.exists() and enc_folder.is_dir() and EXPEDIENTES_DIR in enc_folder.resolve().parents:
+                shutil.move(str(enc_folder), str(trash_dir / enc_folder.name))
+                patient_folder = enc_folder.parent
                 try:
-                    enc_folder = storage.resolve(enc_key)
-                    if enc_folder.exists() and enc_folder.is_dir() and EXPEDIENTES_DIR in enc_folder.resolve().parents:
-                        trash_dir = trash_scope_dir(f"atencion {encounter_id}")
-                        shutil.move(str(enc_folder), str(trash_dir / enc_folder.name))
-                        patient_folder = enc_folder.parent
-                        try:
-                            if patient_folder != EXPEDIENTES_DIR.resolve() and patient_folder.exists() and not any(patient_folder.iterdir()):
-                                patient_folder.rmdir()
-                        except OSError:
-                            logger.exception("No se pudo eliminar carpeta vacia de expediente: %s", patient_folder)
-                except Exception:
-                    logger.exception("No se pudo eliminar la carpeta de la atencion: %s", enc_key)
+                    if patient_folder != EXPEDIENTES_DIR.resolve() and patient_folder.exists() and not any(patient_folder.iterdir()):
+                        patient_folder.rmdir()
+                except OSError:
+                    logger.exception("No se pudo eliminar carpeta vacia de expediente: %s", patient_folder)
         else:
-            touched = []
+            touched_folders = []
             for column in ("pdf_path", "front_image_path", "back_image_path"):
-                key = encounter.get(column) or ""
-                if key:
-                    trash_name = trash_scope_dir(f"atencion {encounter_id}").name
-                    try:
-                        result = delete_encounter_file(key, f"papelera/{trash_name}")
-                        if result:
-                            touched.append(result)
-                    except Exception:
-                        logger.exception("Error eliminando archivo: %s", key)
-            for folder in set(touched):
+                source_path = deletable_storage_path(encounter[column])
+                destination_dir = trash_dir / safe_name(source_path.parent.name) if source_path else trash_dir
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                folder = delete_encounter_file(encounter[column], destination_dir)
+                if folder:
+                    touched_folders.append(folder)
+            for folder in set(touched_folders):
                 try:
-                    if folder and storage.exists(folder) and storage.is_dir(folder):
-                        parent_key = str(Path(folder).parent)
-                        if parent_key and parent_key != PATIENT_FILES_ROOT:
-                            try:
-                                items = storage.list_dir(parent_key)
-                                if not items:
-                                    storage.rmdir(parent_key)
-                            except StorageError:
-                                pass
-                except Exception:
+                    if folder != EXPEDIENTES_DIR.resolve() and folder.exists() and not any(folder.iterdir()):
+                        folder.rmdir()
+                except OSError:
                     logger.exception("No se pudo eliminar carpeta vacia de expediente: %s", folder)
 
         conn.execute("DELETE FROM encounters WHERE id = ?", (encounter_id,))
@@ -1806,15 +1400,15 @@ def share_pdf(encounter_id: int, request: Request, user: dict = Depends(require_
 
 # --- Admin: User management ---
 
-
 @app.get("/doctor/users", response_class=HTMLResponse)
 def users_list(request: Request, _: dict = Depends(require_admin)) -> HTMLResponse:
     with db() as conn:
-        users_raw = conn.execute("SELECT id, username, full_name, email, role, is_active, must_change_password, deleted_at, created_at FROM users ORDER BY id").fetchall()
+        users_raw = conn.execute(
+                "SELECT id, username, full_name, email, role, is_active, must_change_password, deleted_at, created_at FROM users ORDER BY id"
+            ).fetchall()
     return template_with_csrf(
-        request,
-        "users_list.html",
-        {"request": request, "users": users_raw, "protected_username": DOCTOR_USERNAME},
+        request, "users_list.html",
+        {"request": request, "users": users_raw},
     )
 
 
@@ -1854,7 +1448,7 @@ def user_edit_form(user_id: int, request: Request, _: dict = Depends(require_adm
     user = get_user_by_id(user_id)
     if not user:
         raise HTTPException(404, "Usuario no encontrado")
-    return template_with_csrf(request, "user_form.html", {"request": request, "user": user, "error": None, "protected_username": DOCTOR_USERNAME})
+    return template_with_csrf(request, "user_form.html", {"request": request, "user": user, "error": None})
 
 
 @app.post("/doctor/users/{user_id}/edit")
@@ -1872,21 +1466,6 @@ def user_edit(
     if role not in ("admin", "doctor"):
         role = "doctor"
     active = 1 if is_active == "1" else 0
-    target = get_user_by_id(user_id)
-    if not target:
-        raise HTTPException(404, "Usuario no encontrado")
-    if target["username"] == DOCTOR_USERNAME:
-        if role != "admin" or active == 0:
-            return template_with_csrf(
-                request,
-                "user_form.html",
-                {
-                    "request": request,
-                    "user": target,
-                    "error": "La cuenta principal del sistema debe mantener rol Administrador y estado activo.",
-                    "protected_username": DOCTOR_USERNAME,
-                },
-            )
     with db() as conn:
         conn.execute(
             "UPDATE users SET full_name = ?, email = ?, role = ?, is_active = ?, updated_at = ? WHERE id = ?",
@@ -1915,28 +1494,16 @@ def user_suspend(
     csrf_token: str = Form(...),
 ) -> Response:
     validate_csrf(request, csrf_token)
-    target = get_user_by_id(user_id)
-    if not target:
-        raise HTTPException(404, "Usuario no encontrado")
-    if target["username"] == DOCTOR_USERNAME:
-        return template_with_csrf(
-            request,
-            "users_list.html",
-            {"request": request, "users": _all_users(), "error": "La cuenta principal del sistema no puede ser suspendida ni borrada.", "protected_username": DOCTOR_USERNAME},
-        )
     if user_id == admin["id"]:
-        return template_with_csrf(
-            request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede suspenderse a si mismo.", "protected_username": DOCTOR_USERNAME}
-        )
+        return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede suspenderse a si mismo."})
     with db() as conn:
+        target = conn.execute("SELECT id, role, is_active FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(404, "Usuario no encontrado")
         if target["role"] == "admin":
             admins = conn.execute("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND is_active = 1 AND deleted_at IS NULL").fetchone()
             if admins["cnt"] <= 1:
-                return template_with_csrf(
-                    request,
-                    "users_list.html",
-                    {"request": request, "users": _all_users(), "error": "No puede suspender al unico administrador activo.", "protected_username": DOCTOR_USERNAME},
-                )
+                return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede suspender al unico administrador activo."})
         conn.execute("UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
     return RedirectResponse("/doctor/users", status_code=303)
 
@@ -1965,32 +1532,22 @@ def user_delete(
     csrf_token: str = Form(...),
 ) -> Response:
     validate_csrf(request, csrf_token)
-    target = get_user_by_id(user_id)
-    if not target:
-        raise HTTPException(404, "Usuario no encontrado")
-    if target["username"] == DOCTOR_USERNAME:
-        return template_with_csrf(
-            request,
-            "users_list.html",
-            {"request": request, "users": _all_users(), "error": "La cuenta principal del sistema no puede ser suspendida ni borrada.", "protected_username": DOCTOR_USERNAME},
-        )
     if user_id == admin["id"]:
-        return template_with_csrf(
-            request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede borrarse a si mismo.", "protected_username": DOCTOR_USERNAME}
-        )
+        return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede borrarse a si mismo."})
     with db() as conn:
+        target = conn.execute("SELECT id, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(404, "Usuario no encontrado")
         if target["role"] == "admin":
             admins = conn.execute("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND deleted_at IS NULL").fetchone()
             if admins["cnt"] <= 1:
-                return template_with_csrf(
-                    request,
-                    "users_list.html",
-                    {"request": request, "users": _all_users(), "error": "No puede borrar al unico administrador.", "protected_username": DOCTOR_USERNAME},
-                )
+                return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede borrar al unico administrador."})
         conn.execute("UPDATE users SET is_active = 0, deleted_at = ?, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), datetime.now().isoformat(), user_id))
     return RedirectResponse("/doctor/users", status_code=303)
 
 
 def _all_users() -> list:
     with db() as conn:
-        return conn.execute("SELECT id, username, full_name, email, role, is_active, must_change_password, deleted_at, created_at FROM users ORDER BY id").fetchall()
+        return conn.execute(
+            "SELECT id, username, full_name, email, role, is_active, must_change_password, deleted_at, created_at FROM users ORDER BY id"
+        ).fetchall()

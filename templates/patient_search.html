@@ -8,12 +8,6 @@
   <a class="buttonlink" href="/doctor">Volver al panel</a>
 </header>
 
-<nav class="tabs">
-  <a class="buttonlink active" href="/doctor/patients/search">Buscar paciente</a>
-  <a class="buttonlink" href="/doctor/patients">Lista de pacientes</a>
-  <a class="buttonlink" href="/doctor/forms/completed">Formularios realizados</a>
-</nav>
-
 <section class="card">
   <form method="get" action="/doctor/patients/search" class="searchbar">
     <label>C&eacute;dula, DIMEX, nombre o apellidos<input name="query" value="{{ query }}" required></label>
@@ -27,14 +21,13 @@
   {% if results %}
   <div class="tablewrap">
     <table>
-      <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
+      <tr><th>Paciente</th><th>Completado</th><th>Documento</th><th>Fotografias</th><th>Acciones</th></tr>
       {% for item in results %}
       <tr>
         <td>{{ item.full_name }}<br><small>{{ item.identification }}</small></td>
         <td>{{ item.created_at[:16].replace('T', ' ') }}</td>
         <td>PDF generado</td>
         <td>Frontal y trasera cargadas</td>
-        {% if user.role == 'admin' %}<td><small>{{ item.doctor_username or 'Admin' }}</small></td>{% endif %}
         <td class="actions">
           <a class="buttonlink" href="/doctor/encounters/{{ item.id }}">Ver detalle</a>
           <a class="buttonlink" href="/doctor/encounters/{{ item.id }}/pdf">Descargar PDF</a>
@@ -55,4 +48,5 @@
   {% endif %}
 </section>
 {% endif %}
+<script src="/static/app.js"></script>
 {% endblock %}

@@ -18,31 +18,19 @@
     <p class="muted">La contrase&ntilde;a provisional ser&aacute;: <strong>usuariodoctor</strong>. El usuario deber&aacute; cambiarla en el primer inicio de sesi&oacute;n.</p>
     {% endif %}
     {% if user %}
-      {% if user.username == protected_username %}
-      <p class="warning">Esta es la cuenta principal del sistema. No puede suspenderse, borrarse ni cambiarse a rol M&eacute;dico.</p>
-      {% endif %}
     <label>Nombre del m&eacute;dico<input name="full_name" value="{{ user.full_name }}"></label>
     <label>Email<input name="email" type="email" value="{{ user.email }}"></label>
     {% endif %}
     <label>Rol
-      <select name="role" {% if user and user.username == protected_username %}disabled{% endif %}>
+      <select name="role">
         <option value="doctor" {% if user and user.role == 'doctor' %}selected{% endif %}>M&eacute;dico</option>
         <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Administrador</option>
       </select>
-      {% if user and user.username == protected_username %}
-      <input type="hidden" name="role" value="admin">
-      {% endif %}
     </label>
     {% if user %}
-      {% if user.username == protected_username %}
-      <label class="checkbox-label">
-        <input type="checkbox" disabled checked> Usuario activo
-      </label>
-      {% else %}
-      <label class="checkbox-label">
-        <input type="checkbox" name="is_active" value="1" {% if user.is_active %}checked{% endif %}> Usuario activo
-      </label>
-      {% endif %}
+    <label class="checkbox-label">
+      <input type="checkbox" name="is_active" value="1" {% if user.is_active %}checked{% endif %}> Usuario activo
+    </label>
     {% endif %}
     <button>{% if user %}Guardar cambios{% else %}Crear m&eacute;dico{% endif %}</button>
   </form>

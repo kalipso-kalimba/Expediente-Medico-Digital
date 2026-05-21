@@ -2,12 +2,8 @@
 Comprehensive test: 23 scenarios for new encounter subfolder structure
 """
 
-import re
-import sys
-import time
+import requests, re, time, sys
 from pathlib import Path
-
-import requests
 
 BASE = "http://127.0.0.1:8765"
 EXP_DIR = Path("G:/Mi unidad/Expediente Médico Digital") / "Expediente de pacientes"
@@ -15,22 +11,18 @@ EXP_DIR = Path("G:/Mi unidad/Expediente Médico Digital") / "Expediente de pacie
 s = requests.Session()
 results = []
 
-
 def check(desc, ok):
     results.append((desc, ok))
     print(f"  {'PASS' if ok else 'FAIL'}: {desc}")
 
-
 def csrf_from(html):
     return re.search(r'name="csrf_token"\s+value="([^"]+)"', html).group(1)
-
 
 # Login
 r = s.get(f"{BASE}/")
 csrf = csrf_from(r.text)
 s.post(f"{BASE}/login", data={"username": "doctor", "password": "test123", "csrf_token": csrf}, allow_redirects=False)
 check("1. Login exitoso", True)
-
 
 def create_encounter(ident, name, suffix):
     ts = str(int(time.time())) + suffix
@@ -93,7 +85,6 @@ def create_encounter(ident, name, suffix):
     if r.status_code != 303:
         return None, f"submit status {r.status_code}: {r.text[:200]}"
     return tok, None
-
 
 ts = str(int(time.time()))
 ident = f"1-{ts[-4:]}-{ts[-8:-4]}"
@@ -169,7 +160,8 @@ check("17. Hay al menos 2 atenciones antes de eliminar", len(all_enc_ids) >= 2)
 delete_id = all_enc_ids[0]
 r = s.get(f"{BASE}/doctor/encounters/{delete_id}")
 csrf = csrf_from(r.text)
-r = s.post(f"{BASE}/doctor/encounters/{delete_id}/delete", data={"csrf_token": csrf}, allow_redirects=False)
+r = s.post(f"{BASE}/doctor/encounters/{delete_id}/delete",
+    data={"csrf_token": csrf}, allow_redirects=False)
 check("18. Eliminar atencion retorna redirect", r.status_code == 303)
 
 remaining_folders = list([f for f in patient_folder.iterdir() if f.is_dir()]) if patient_folder else []
