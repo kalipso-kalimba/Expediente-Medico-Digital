@@ -12,11 +12,11 @@
     <a class="buttonlink" href="/doctor/users">Administrar m&eacute;dicos</a>
     {% endif %}
     {% if APP_ENV == 'local' and user.role == 'admin' %}
-    <p style="font-size:0.75em;color:rgba(255,255,255,.5);margin:0">Rol: {{ user.role }}</p>
+    <p class="muted" style="font-size:.75rem">Rol: {{ user.role }}</p>
     {% endif %}
      <form method="post" action="/logout">
        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-       <button type="submit">Salir</button>
+       <button type="submit" class="btn-logout">Salir</button>
      </form>
   </div>
 </header>
@@ -32,32 +32,20 @@
 
 <div class="stats-grid">
   <div class="stat-card">
-    <span class="stat-icon">🏥</span>
-    <div class="stat-body">
-      <p class="stat-value">{{ stats.total_patients }}</p>
-      <p class="stat-label">Total pacientes</p>
-    </div>
+    <p class="stat-value">{{ stats.total_patients }}</p>
+    <p class="stat-label">Total pacientes</p>
   </div>
   <div class="stat-card">
-    <span class="stat-icon">📋</span>
-    <div class="stat-body">
-      <p class="stat-value">{{ stats.forms_today }}</p>
-      <p class="stat-label">Formularios hoy</p>
-    </div>
+    <p class="stat-value">{{ stats.forms_today }}</p>
+    <p class="stat-label">Formularios hoy</p>
   </div>
   <div class="stat-card">
-    <span class="stat-icon">🔗</span>
-    <div class="stat-body">
-      <p class="stat-value">{{ stats.active_links }}</p>
-      <p class="stat-label">Enlaces activos</p>
-    </div>
+    <p class="stat-value">{{ stats.active_links }}</p>
+    <p class="stat-label">Enlaces activos</p>
   </div>
   <div class="stat-card">
-    <span class="stat-icon">📝</span>
-    <div class="stat-body">
-      <p class="stat-value">{{ stats.pending_drafts }}</p>
-      <p class="stat-label">Borradores pendientes</p>
-    </div>
+    <p class="stat-value">{{ stats.pending_drafts }}</p>
+    <p class="stat-label">Borradores pendientes</p>
   </div>
 </div>
 
