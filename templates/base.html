@@ -6,13 +6,11 @@
   <title>{{ title or "Expediente Médico Digital" }}</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body{% block body_attrs %}{% endblock %}>
+<body>
   <div id="toast-container" class="toast-container"></div>
-  {% block body_content %}
   <main class="shell">
     {% block content %}{% endblock %}
   </main>
-  {% endblock %}
   <script src="/static/app.js"></script>
 </body>
 </html>
