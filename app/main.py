@@ -295,6 +295,31 @@ def init_db() -> None:
                 ALTER TABLE patients_new RENAME TO patients;
             """)
             conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action TEXT NOT NULL,
+                entity_type TEXT,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TEXT NOT NULL,
+                is_demo INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+
+        demo_cols = {
+            "users": ("is_demo", "INTEGER NOT NULL DEFAULT 0"),
+            "links": ("is_demo", "INTEGER NOT NULL DEFAULT 0"),
+            "encounters": ("is_demo", "INTEGER NOT NULL DEFAULT 0"),
+            "patients": ("is_demo", "INTEGER NOT NULL DEFAULT 0"),
+        }
+        for table, (col, col_def) in demo_cols.items():
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if col not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}")
         migrate_admin()
     sync_existing_expedientes()
 
@@ -367,6 +392,17 @@ def sync_existing_expedientes() -> None:
                     continue
                 for pdf_path in subfolder.glob("*.pdf"):
                     import_pdf(pdf_path, subfolder)
+
+
+def log_audit(user_id: int | None, action: str, entity_type: str | None = None, entity_id: int | None = None, details: str | None = None, is_demo: int = 0) -> None:
+    try:
+        with db() as conn:
+            conn.execute(
+                "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details, created_at, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, action, entity_type, entity_id, details, datetime.now().isoformat(), is_demo),
+            )
+    except Exception:
+        logger.exception("Error registrando auditoria: %s", action)
 
 
 def set_private_cookie(response: RedirectResponse | HTMLResponse, name: str, value: str) -> None:
@@ -615,7 +651,7 @@ def available_path(path: Path) -> Path:
     raise HTTPException(500, "No se pudo crear un nombre de archivo disponible")
 
 
-def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path: Path, source: str = "remote") -> None:
+def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path: Path, source: str = "remote", doctor_name: str = "", encounter_id: int = 0, is_demo: bool = False) -> None:
     styles = getSampleStyleSheet()
     section_style = ParagraphStyle("SectionTitle", parent=styles["Heading2"], fontSize=10, textColor=colors.HexColor("#1f3a5f"), spaceBefore=12, spaceAfter=4)
     small_style = ParagraphStyle("SmallText", parent=styles["Normal"], fontSize=7.5, leading=9, textColor=colors.HexColor("#555555"))
@@ -623,15 +659,21 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
     label_style = ParagraphStyle("LabelText", parent=cell_style, textColor=colors.HexColor("#333333"))
     value_style = ParagraphStyle("ValueText", parent=cell_style, textColor=colors.HexColor("#111111"))
     obs_hint = ParagraphStyle("ObsHint", parent=styles["Normal"], fontSize=7, textColor=colors.HexColor("#999999"))
+    demo_style = ParagraphStyle("Demo", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#cc0000"), fontName="Helvetica-Bold", alignment=1, spaceBefore=6, spaceAfter=6)
     story = []
 
     story.append(Spacer(1, 4))
 
+    if is_demo:
+        story.append(Paragraph("DATOS FICTICIOS DE DEMOSTRACI\u00d3N \u2014 NO USAR COMO EXPEDIENTE REAL", demo_style))
+        story.append(Spacer(1, 4))
+
     # Header bar
-    header_data = [[
+    header_lines = [
         Paragraph("Expediente M\u00e9dico Digital", ParagraphStyle("H", fontSize=13, textColor=colors.white, fontName="Helvetica-Bold", spaceAfter=0, leading=16)),
-        Paragraph(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ParagraphStyle("HD", fontSize=7.5, textColor=colors.white, alignment=2, spaceAfter=0, leading=10)),
-    ]]
+        Paragraph(f"Atenci\u00f3n #{encounter_id} | {datetime.now().strftime('%Y-%m-%d %H:%M')}", ParagraphStyle("HD", fontSize=7.5, textColor=colors.white, alignment=2, spaceAfter=0, leading=10)),
+    ]
+    header_data = [header_lines]
     ht = Table(header_data, colWidths=[300, 210])
     ht.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#1f3a5f")),
@@ -645,6 +687,17 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
     story.append(ht)
     story.append(Spacer(1, 6))
 
+    # Doctor info
+    meta_style = ParagraphStyle("Meta", parent=small_style, fontSize=8, leading=10)
+    meta = []
+    if doctor_name:
+        meta.append(f"M\u00e9dico responsable: {doctor_name}")
+    meta.append(f"Atenci\u00f3n #{encounter_id}")
+    source_label = "Presencial" if source == "in_person" else "Remota (enlace enviado al paciente)"
+    meta.append(f"Modalidad: {source_label}")
+    story.append(Paragraph(" | ".join(meta), meta_style))
+    story.append(Spacer(1, 6))
+
     # Disclaimer
     disclaimer = (
         "La informaci\u00f3n contenida en este documento corresponde exclusivamente a los datos "
@@ -654,9 +707,11 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
         "diagn\u00f3stico o decisi\u00f3n m\u00e9dica."
     )
     story.append(Paragraph(disclaimer, small_style))
-    origin_text = "Origen del formulario: Atenci\u00f3n presencial." if source == "in_person" else "Origen del formulario: Enlace enviado al paciente."
-    story.append(Paragraph(origin_text, small_style))
     story.append(Spacer(1, 10))
+
+    if is_demo:
+        story.append(Paragraph("DATOS FICTICIOS DE DEMOSTRACI\u00d3N \u2014 NO USAR COMO EXPEDIENTE REAL", demo_style))
+        story.append(Spacer(1, 6))
 
     # Field definitions
     labels = {
@@ -694,21 +749,17 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
         "license_types": "Tipos de licencia",
         "truth_declaration": "Declaraci\u00f3n de veracidad",
     }
-    general_keys = [
-        "full_name", "identification", "id_type", "nationality", "age", "birth_date",
-        "civil_status", "profession", "whatsapp", "email",
-        "province", "canton", "district_or_locality", "exact_address",
-    ]
+    id_keys = ["full_name", "identification", "id_type", "nationality", "age", "birth_date"]
+    contact_keys = ["whatsapp", "email", "civil_status", "profession"]
+    address_keys = ["province", "canton", "district_or_locality", "exact_address"]
     medical_keys = [
         "organ_donor", "has_illness", "illnesses", "treatments",
-        "smokes", "smoke_frequency", "smoke_product",
-        "drinks", "drink_frequency",
-        "uses_drugs", "drug_type", "drug_frequency",
         "weight", "height", "uses_glasses", "glasses_use", "laterality",
-        "license_types", "truth_declaration",
     ]
+    habits_keys = ["smokes", "smoke_frequency", "smoke_product", "drinks", "drink_frequency", "uses_drugs", "drug_type", "drug_frequency"]
+    license_final_keys = ["laterality", "license_types", "truth_declaration"]
 
-    def make_table(keys: list[str]) -> Table:
+    def make_table(keys: list[str], col_widths: tuple[int, int] = (145, 365)) -> Table:
         rows = [
             [
                 Paragraph("Campo", ParagraphStyle("Th", parent=cell_style, textColor=colors.white, fontName="Helvetica-Bold")),
@@ -723,7 +774,7 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
                 Paragraph(labels.get(k, k), label_style),
                 Paragraph(str(v or "No indicado"), value_style),
             ])
-        t = Table(rows, colWidths=[145, 365])
+        t = Table(rows, colWidths=list(col_widths))
         t.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
             ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#d0d7de")),
@@ -736,15 +787,29 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
         ]))
         return t
 
-    # Section: Datos generales
-    story.append(Paragraph("Datos generales del paciente", section_style))
-    story.append(make_table(general_keys))
-    story.append(Spacer(1, 10))
+    story.append(Paragraph("Identificaci\u00f3n del paciente", section_style))
+    story.append(make_table(id_keys))
+    story.append(Spacer(1, 6))
 
-    # Section: Informacion medica
-    story.append(Paragraph("Informaci\u00f3n m\u00e9dica", section_style))
+    story.append(Paragraph("Contacto", section_style))
+    story.append(make_table(contact_keys))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Direcci\u00f3n", section_style))
+    story.append(make_table(address_keys))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Antecedentes m\u00e9dicos", section_style))
     story.append(make_table(medical_keys))
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("H\u00e1bitos", section_style))
+    story.append(make_table(habits_keys))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Evaluaci\u00f3n de licencia solicitada", section_style))
+    story.append(make_table(license_final_keys))
+    story.append(Spacer(1, 10))
 
     # Section: ID photos
     story.append(Paragraph("Documento de identificaci\u00f3n aportado por el paciente", section_style))
@@ -785,6 +850,10 @@ def build_pdf(pdf_path: Path, data: dict[str, Any], front_path: Path, back_path:
     story.append(Spacer(1, 2))
     story.append(Paragraph("Espacio reservado para anotaciones, diagn\u00f3stico y recomendaciones del m\u00e9dico.", obs_hint))
 
+    if is_demo:
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("DATOS FICTICIOS DE DEMOSTRACI\u00d3N \u2014 NO USAR COMO EXPEDIENTE REAL", demo_style))
+
     SimpleDocTemplate(str(pdf_path), pagesize=letter, rightMargin=36, leftMargin=36, topMargin=28, bottomMargin=28).build(story)
 
 
@@ -810,9 +879,11 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     validate_csrf(request, csrf_token)
     user = verify_user_password(username, password)
     if not user:
+        log_audit(None, "login fallido", "user", None, f"Intento fallido para usuario: {username}")
         return template_with_csrf(request, "login.html", {"request": request, "error": "Credenciales invalidas"})
     response = RedirectResponse("/doctor", status_code=303)
     set_private_cookie(response, SESSION_COOKIE, session_value(user["id"]))
+    log_audit(user["id"], "login exitoso", "user", user["id"], f"Usuario {username} inicio sesion")
     return response
 
 
@@ -976,10 +1047,12 @@ def create_link(request: Request, user: dict = Depends(require_doctor), csrf_tok
     token = secrets.token_urlsafe(24)
     now = datetime.now()
     with db() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO links (token, created_at, expires_at, doctor_id) VALUES (?, ?, ?, ?)",
             (token, now.isoformat(), (now + timedelta(days=14)).isoformat(), user["id"]),
         )
+        link_id = cur.lastrowid
+    log_audit(user["id"], "generar enlace", "link", link_id, "Enlace remoto generado")
     return RedirectResponse("/doctor", status_code=303)
 
 
@@ -989,10 +1062,12 @@ def create_in_person_form(request: Request, user: dict = Depends(require_doctor)
     token = secrets.token_urlsafe(24)
     now = datetime.now()
     with db() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO links (token, created_at, expires_at, doctor_id, source) VALUES (?, ?, ?, ?, 'in_person')",
             (token, now.isoformat(), (now + timedelta(days=1)).isoformat(), user["id"]),
         )
+        link_id = cur.lastrowid
+    log_audit(user["id"], "generar enlace", "link", link_id, "Enlace presencial generado")
     return RedirectResponse(f"/patient/{token}?mode=in_person", status_code=303)
 
 
@@ -1006,6 +1081,7 @@ def delete_link(link_id: int, request: Request, user: dict = Depends(require_doc
         if user["role"] != "admin" and link["doctor_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Acceso denegado.")
         conn.execute("DELETE FROM links WHERE id = ?", (link_id,))
+    log_audit(user["id"], "borrar enlace", "link", link_id, f"Enlace borrado")
     return RedirectResponse("/doctor", status_code=303)
 
 
@@ -1260,6 +1336,7 @@ def submit_form(
     save_upload(cedula_back, back_path)
     build_pdf(pdf_path, data, front_path, back_path, form_source)
 
+    encounter_id = None
     try:
         with db() as conn:
             if existing_patient:
@@ -1270,16 +1347,19 @@ def submit_form(
                     (identification, full_name, folder_name, datetime.now().isoformat(), doctor_id),
                 )
                 patient_id = cur.lastrowid
-            conn.execute(
+            cur = conn.execute(
                 """
                 INSERT INTO encounters (patient_id, token, payload, pdf_path, front_image_path, back_image_path, encounter_folder_path, created_at, doctor_id, source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (patient_id, token, json.dumps(data, ensure_ascii=True), str(pdf_path), str(front_path), str(back_path), str(encounter_folder), datetime.now().isoformat(), doctor_id, form_source),
             )
+            encounter_id = cur.lastrowid
             conn.execute("UPDATE links SET used_at = ?, patient_id = ? WHERE token = ?", (datetime.now().isoformat(), patient_id, token))
     except Exception:
         logger.exception("Error registrando la atencion despues de generar el PDF: %s", pdf_path)
+    if encounter_id:
+        log_audit(doctor_id, "completar formulario", "encounter", encounter_id, f"Formulario completado por paciente: {full_name}")
 
     thank_you_mode = "in_person" if form_source == "in_person" else ""
     return RedirectResponse(f"/thank-you?mode={thank_you_mode}", status_code=303)
@@ -1302,6 +1382,7 @@ def download_pdf(encounter_id: int, user: dict = Depends(require_doctor)) -> Fil
     if not encounter:
         raise HTTPException(404, "Documento no encontrado")
     path = protected_storage_path(encounter["pdf_path"])
+    log_audit(user["id"], "descargar PDF", "encounter", encounter_id, f"PDF descargado: {path.name}")
     return FileResponse(path, media_type="application/pdf", filename=path.name)
 
 
@@ -1357,6 +1438,7 @@ def delete_encounter(encounter_id: int, request: Request, user: dict = Depends(r
         conn.execute("DELETE FROM encounters WHERE id = ?", (encounter_id,))
         conn.execute("DELETE FROM links WHERE token = ?", (encounter["token"],))
 
+    log_audit(user["id"], "borrar atencion", "encounter", encounter_id, f"Atencion borrada: {encounter.get('full_name', '')} - {encounter.get('identification', '')}")
     return RedirectResponse("/doctor", status_code=303)
 
 
@@ -1384,6 +1466,8 @@ def raw_identification_image(encounter_id: int, side: str, user: dict = Depends(
     column = "front_image_path" if side == "front" else "back_image_path"
     path = protected_storage_path(encounter[column])
     media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    side_label = "frontal" if side == "front" else "trasera"
+    log_audit(user["id"], f"ver imagen {side_label}", "encounter", encounter_id, f"Imagen {side_label} visualizada")
     return FileResponse(path, media_type=media_type, headers={"Content-Disposition": "inline"})
 
 
@@ -1432,14 +1516,18 @@ def user_new(
     if role not in ("admin", "doctor"):
         role = "doctor"
     hashed = hash_password(DEFAULT_PASSWORD)
+    new_id = None
     try:
         with db() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO users (username, password_hash, full_name, role, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
                 (username, hashed, full_name, role, datetime.now().isoformat(), datetime.now().isoformat()),
             )
+            new_id = cur.lastrowid
     except sqlite3.IntegrityError:
         return template_with_csrf(request, "user_form.html", {"request": request, "user": None, "error": f"El usuario '{username}' ya existe."})
+    if new_id:
+        log_audit(_["id"], "crear usuario", "user", new_id, f"Usuario creado: {username}")
     return RedirectResponse("/doctor/users", status_code=303)
 
 
@@ -1483,6 +1571,7 @@ def user_reset_password(
 ) -> Response:
     validate_csrf(request, csrf_token)
     set_user_password(user_id, DEFAULT_PASSWORD, must_change=1)
+    log_audit(_["id"], "restablecer contrasena", "user", user_id, f"Contrasena restablecida a provisional")
     return RedirectResponse("/doctor/users", status_code=303)
 
 
@@ -1505,6 +1594,7 @@ def user_suspend(
             if admins["cnt"] <= 1:
                 return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede suspender al unico administrador activo."})
         conn.execute("UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+    log_audit(admin["id"], "suspender usuario", "user", user_id, f"Usuario suspendido")
     return RedirectResponse("/doctor/users", status_code=303)
 
 
@@ -1521,6 +1611,7 @@ def user_reactivate(
         if not target:
             raise HTTPException(404, "Usuario no encontrado")
         conn.execute("UPDATE users SET is_active = 1, deleted_at = NULL, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+    log_audit(_["id"], "reactivar usuario", "user", user_id, f"Usuario reactivado")
     return RedirectResponse("/doctor/users", status_code=303)
 
 
@@ -1543,6 +1634,7 @@ def user_delete(
             if admins["cnt"] <= 1:
                 return template_with_csrf(request, "users_list.html", {"request": request, "users": _all_users(), "error": "No puede borrar al unico administrador."})
         conn.execute("UPDATE users SET is_active = 0, deleted_at = ?, updated_at = ? WHERE id = ?", (datetime.now().isoformat(), datetime.now().isoformat(), user_id))
+    log_audit(admin["id"], "borrar usuario", "user", user_id, f"Usuario borrado logicamente")
     return RedirectResponse("/doctor/users", status_code=303)
 
 

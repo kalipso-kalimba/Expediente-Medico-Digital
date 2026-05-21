@@ -2,7 +2,7 @@
 {% block content %}
 <section class="hero">
   <h1>Toma remota de datos b&aacute;sicos para valoraci&oacute;n m&eacute;dica</h1>
-  <p>Complete la informacion paso a paso. Los campos condicionales aparecen solo cuando corresponden.</p>
+  <p>Complete la informaci&oacute;n paso a paso.</p>
 </section>
 
 {% if is_in_person %}
@@ -11,152 +11,198 @@
 </section>
 {% endif %}
 
+<div class="progress-container">
+  <div class="progress-bar" id="progressBar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+  <p class="progress-text" id="progressText">0% completado</p>
+</div>
+
 <form method="post" action="/patient/{{ token }}/submit" enctype="multipart/form-data" class="card form" id="patientForm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <h2>Datos generales</h2>
-  <div class="grid two">
-    <label>Nacionalidad
-      <select name="nationality" id="nationality" required>
-        <option value="">Seleccione</option>
-        <option value="Costarricense">Costarricense / Nacional</option>
-        <option value="Extranjero">Extranjero</option>
-      </select>
-    </label>
-    <label>Tipo de identificacion
-      <select name="id_type" id="idType" required>
-        <option value="cedula">Cedula nacional</option>
-        <option value="dimex">DIMEX</option>
-      </select>
-    </label>
-    <label>Numero de cedula o DIMEX<input name="identification" id="identification" required></label>
-    <div class="lookup-box" id="tseLookupBox">
-      <button type="button" class="secondary" id="tseLookupButton">Consultar datos</button>
-      <p class="muted" id="tseLookupMessage">Para cedula nacional puede consultar el nombre automaticamente si el servicio esta disponible.</p>
+
+  <div class="form-section" data-section="identification">
+    <h2>Identificaci&oacute;n</h2>
+    <div class="grid two">
+      <label>Nacionalidad
+        <select name="nationality" id="nationality" required>
+          <option value="">Seleccione</option>
+          <option value="Costarricense">Costarricense / Nacional</option>
+          <option value="Extranjero">Extranjero</option>
+        </select>
+      </label>
+      <label>Tipo de identificaci&oacute;n
+        <select name="id_type" id="idType" required>
+          <option value="cedula">C&eacute;dula nacional</option>
+          <option value="dimex">DIMEX</option>
+        </select>
+      </label>
+      <label>N&uacute;mero de c&eacute;dula o DIMEX<input name="identification" id="identification" required></label>
+      <div class="lookup-box" id="tseLookupBox">
+        <button type="button" class="secondary" id="tseLookupButton">Consultar datos</button>
+        <p class="muted" id="tseLookupMessage">Para c&eacute;dula nacional puede consultar el nombre autom&aacute;ticamente si el servicio est&aacute; disponible.</p>
+      </div>
+      <label>Nombre completo<input name="full_name" id="fullName" required></label>
     </div>
-    <label>Nombre completo<input name="full_name" id="fullName" required></label>
-    <label>WhatsApp<input name="whatsapp" required></label>
-    <label>Email<input name="email" type="email" required></label>
-    <label>Edad<input name="age" type="number" min="0" max="130" required></label>
-    <label>Fecha de nacimiento<input name="birth_date" type="date" required></label>
-    <label>Estado civil<input name="civil_status" required></label>
-    <label>Profesion u oficio<input name="profession" required></label>
-    <label>Provincia
-      <select name="province" id="provinceSelect" required>
-        <option value="">Seleccione provincia</option>
-      </select>
-      <input type="hidden" name="province_code" id="provinceCode">
-    </label>
-    <label>Canton
-      <select name="canton" id="cantonSelect" required disabled>
-        <option value="">Seleccione canton</option>
-      </select>
-      <input type="hidden" name="canton_code" id="cantonCode">
-    </label>
-  </div>
-  <div class="grid two">
-    <label>Distrito, barrio o localidad
-      <select name="district_or_locality" id="localitySelect" required disabled>
-        <option value="">Seleccione distrito, barrio o localidad</option>
-      </select>
-      <input name="district_or_locality" id="localityInput" class="hidden" disabled required placeholder="Escriba distrito, barrio o localidad">
-      <input type="hidden" name="district_or_locality_code" id="localityCode">
-    </label>
-  </div>
-  <label>Otras senas exactas<textarea name="exact_address" required placeholder="Escriba direccion exacta, numero de casa, apartamento o referencias"></textarea></label>
-
-  <h2>Datos medicos</h2>
-  <div class="question">
-    <span>Dona organos en caso de accidente grave?</span>
-    <label><input type="radio" name="organ_donor" value="Si" required> Si</label>
-    <label><input type="radio" name="organ_donor" value="No" required> No</label>
   </div>
 
-  <div class="question" data-toggle="illnessBlock">
-    <span>Padece alguna enfermedad?</span>
-    <label><input type="radio" name="has_illness" value="Si" required> Si</label>
-    <label><input type="radio" name="has_illness" value="No" required> No</label>
-  </div>
-  <div id="illnessBlock" class="conditional">
-    <label>Cual o cuales enfermedades padece?<textarea name="illnesses"></textarea></label>
-    <label>Que medicamentos o tratamientos utiliza?<textarea name="treatments"></textarea></label>
-  </div>
-
-  <div class="question" data-toggle="smokeBlock">
-    <span>Fuma?</span>
-    <label><input type="radio" name="smokes" value="Si" required> Si</label>
-    <label><input type="radio" name="smokes" value="No" required> No</label>
-  </div>
-  <div id="smokeBlock" class="conditional grid two">
-    <label>Cuantas veces a la semana fuma?<input name="smoke_frequency"></label>
-    <label>Que tipo de producto fuma?<input name="smoke_product"></label>
+  <div class="form-section" data-section="contact">
+    <h2>Contacto</h2>
+    <div class="grid two">
+      <label>WhatsApp<input name="whatsapp" required></label>
+      <label>Email<input name="email" type="email" required></label>
+      <label>Edad<input name="age" type="number" min="0" max="130" required></label>
+      <label>Fecha de nacimiento<input name="birth_date" type="date" required></label>
+      <label>Estado civil<input name="civil_status" required></label>
+      <label>Profesi&oacute;n u oficio<input name="profession" required></label>
+    </div>
   </div>
 
-  <div class="question" data-toggle="drinkBlock">
-    <span>Toma licor?</span>
-    <label><input type="radio" name="drinks" value="Si" required> Si</label>
-    <label><input type="radio" name="drinks" value="No" required> No</label>
-  </div>
-  <div id="drinkBlock" class="conditional">
-    <label>Cuantas bebidas consume al dia o por semana?<input name="drink_frequency"></label>
+  <div class="form-section" data-section="address">
+    <h2>Direcci&oacute;n</h2>
+    <div class="grid two">
+      <label>Provincia
+        <select name="province" id="provinceSelect" required>
+          <option value="">Seleccione provincia</option>
+        </select>
+        <input type="hidden" name="province_code" id="provinceCode">
+      </label>
+      <label>Cant&oacute;n
+        <select name="canton" id="cantonSelect" required disabled>
+          <option value="">Seleccione cant&oacute;n</option>
+        </select>
+        <input type="hidden" name="canton_code" id="cantonCode">
+      </label>
+    </div>
+    <div class="grid two">
+      <label>Distrito, barrio o localidad
+        <select name="district_or_locality" id="localitySelect" required disabled>
+          <option value="">Seleccione distrito, barrio o localidad</option>
+        </select>
+        <input name="district_or_locality" id="localityInput" class="hidden" disabled required placeholder="Escriba distrito, barrio o localidad">
+        <input type="hidden" name="district_or_locality_code" id="localityCode">
+      </label>
+    </div>
+    <label>Otras se&ntilde;as exactas<textarea name="exact_address" required placeholder="Escriba direcci&oacute;n exacta, n&uacute;mero de casa, apartamento o referencias"></textarea></label>
   </div>
 
-  <div class="question" data-toggle="drugBlock">
-    <span>Consume drogas?</span>
-    <label><input type="radio" name="uses_drugs" value="Si" required> Si</label>
-    <label><input type="radio" name="uses_drugs" value="No" required> No</label>
-  </div>
-  <div id="drugBlock" class="conditional grid two">
-    <label>Que tipo de droga consume?<input name="drug_type"></label>
-    <label>Con que frecuencia la consume?<input name="drug_frequency"></label>
+  <div class="form-section" data-section="medical">
+    <h2>Antecedentes m&eacute;dicos</h2>
+    <div class="question">
+      <span>&iquest;Dona &oacute;rganos en caso de accidente grave?</span>
+      <label><input type="radio" name="organ_donor" value="Si" required> S&iacute;</label>
+      <label><input type="radio" name="organ_donor" value="No" required> No</label>
+    </div>
+
+    <div class="form-section" data-section="illness">
+      <div class="question" data-toggle="illnessBlock">
+        <span>&iquest;Padece alguna enfermedad?</span>
+        <label><input type="radio" name="has_illness" value="Si" required> S&iacute;</label>
+        <label><input type="radio" name="has_illness" value="No" required> No</label>
+      </div>
+      <div id="illnessBlock" class="conditional">
+        <label>&iquest;Cu&aacute;l o cu&aacute;les enfermedades padece?<textarea name="illnesses" class="conditional-required"></textarea></label>
+        <label>&iquest;Qu&eacute; medicamentos o tratamientos utiliza?<textarea name="treatments" class="conditional-required"></textarea></label>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <label>Peso<input name="weight" required placeholder="kg"></label>
+      <label>Estatura<input name="height" required placeholder="cm"></label>
+    </div>
+
+    <div class="question" data-toggle="glassesBlock">
+      <span>&iquest;Usa lentes por discapacidad visual?</span>
+      <label><input type="radio" name="uses_glasses" value="Si" required> S&iacute;</label>
+      <label><input type="radio" name="uses_glasses" value="No" required> No</label>
+    </div>
+    <div id="glassesBlock" class="conditional">
+      <label>&iquest;Los usa para ver de cerca, de lejos o ambos?
+        <select name="glasses_use" class="conditional-required">
+          <option value="">Seleccione</option>
+          <option>Cerca</option>
+          <option>Lejos</option>
+          <option>Ambos</option>
+        </select>
+      </label>
+    </div>
   </div>
 
-  <div class="grid two">
-    <label>Peso<input name="weight" required placeholder="kg"></label>
-    <label>Estatura<input name="height" required placeholder="cm"></label>
+  <div class="form-section" data-section="habits">
+    <h2>H&aacute;bitos</h2>
+    <div class="question" data-toggle="smokeBlock">
+      <span>&iquest;Fuma?</span>
+      <label><input type="radio" name="smokes" value="Si" required> S&iacute;</label>
+      <label><input type="radio" name="smokes" value="No" required> No</label>
+    </div>
+    <div id="smokeBlock" class="conditional grid two">
+      <label>&iquest;Cu&aacute;ntas veces a la semana fuma?<input name="smoke_frequency" class="conditional-required"></label>
+      <label>&iquest;Qu&eacute; tipo de producto fuma?<input name="smoke_product" class="conditional-required"></label>
+    </div>
+
+    <div class="question" data-toggle="drinkBlock">
+      <span>&iquest;Toma licor?</span>
+      <label><input type="radio" name="drinks" value="Si" required> S&iacute;</label>
+      <label><input type="radio" name="drinks" value="No" required> No</label>
+    </div>
+    <div id="drinkBlock" class="conditional">
+      <label>&iquest;Cu&aacute;ntas bebidas consume al d&iacute;a o por semana?<input name="drink_frequency" class="conditional-required"></label>
+    </div>
+
+    <div class="question" data-toggle="drugBlock">
+      <span>&iquest;Consume drogas?</span>
+      <label><input type="radio" name="uses_drugs" value="Si" required> S&iacute;</label>
+      <label><input type="radio" name="uses_drugs" value="No" required> No</label>
+    </div>
+    <div id="drugBlock" class="conditional grid two">
+      <label>&iquest;Qu&eacute; tipo de droga consume?<input name="drug_type" class="conditional-required"></label>
+      <label>&iquest;Con qu&eacute; frecuencia la consume?<input name="drug_frequency" class="conditional-required"></label>
+    </div>
   </div>
 
-  <div class="question" data-toggle="glassesBlock">
-    <span>Usa lentes por discapacidad visual?</span>
-    <label><input type="radio" name="uses_glasses" value="Si" required> Si</label>
-    <label><input type="radio" name="uses_glasses" value="No" required> No</label>
-  </div>
-  <div id="glassesBlock" class="conditional">
-    <label>Los usa para ver de cerca, de lejos o ambos?
-      <select name="glasses_use">
+  <div class="form-section" data-section="license">
+    <h2>Licencia solicitada</h2>
+    <label>Lateralidad
+      <select name="laterality" required>
         <option value="">Seleccione</option>
-        <option>Cerca</option>
-        <option>Lejos</option>
-        <option>Ambos</option>
+        <option>Derecho</option>
+        <option>Zurdo</option>
       </select>
     </label>
+    <fieldset>
+      <legend>Tipo de licencia que necesita</legend>
+      <label><input type="checkbox" name="license_types" value="A"> A</label>
+      <label><input type="checkbox" name="license_types" value="B"> B</label>
+      <label><input type="checkbox" name="license_types" value="C"> C</label>
+      <label><input type="checkbox" name="license_types" value="D"> D</label>
+      <label><input type="checkbox" name="license_types" value="E"> E</label>
+    </fieldset>
   </div>
 
-  <label>Lateralidad
-    <select name="laterality" required>
-      <option value="">Seleccione</option>
-      <option>Derecho</option>
-      <option>Zurdo</option>
-    </select>
-  </label>
-
-  <fieldset>
-    <legend>Tipo de licencia que necesita</legend>
-    <label><input type="checkbox" name="license_types" value="A"> A</label>
-    <label><input type="checkbox" name="license_types" value="B"> B</label>
-    <label><input type="checkbox" name="license_types" value="C"> C</label>
-    <label><input type="checkbox" name="license_types" value="D"> D</label>
-    <label><input type="checkbox" name="license_types" value="E"> E</label>
-  </fieldset>
-
-  <h2>Fotografias del documento</h2>
-  <p class="muted">Tome fotos claras, legibles, sin reflejos ni cortes. Las imagenes no se publican.</p>
-  <div class="grid two">
-    <label>Frontal de cedula o DIMEX<input name="cedula_front" type="file" accept="image/*" capture="environment" required></label>
-    <label>Trasera de cedula o DIMEX<input name="cedula_back" type="file" accept="image/*" capture="environment" required></label>
+  <div class="form-section" data-section="photos">
+    <h2>Fotograf&iacute;as del documento</h2>
+    <p class="muted">Tome fotograf&iacute;as claras y legibles. Evite reflejos, sombras, cortes o mala iluminaci&oacute;n. Aseg&uacute;rese de que el documento completo est&eacute; dentro de la imagen.</p>
+    <div class="grid two">
+      <label>Frontal de c&eacute;dula o DIMEX
+        <span class="photo-hint">Coloque el documento sobre una superficie plana con buena luz. Tome la foto de frente, sin inclinar.</span>
+        <input name="cedula_front" type="file" accept="image/*" capture="environment" required>
+      </label>
+      <label>Trasera de c&eacute;dula o DIMEX
+        <span class="photo-hint">Voltee el documento y tome la foto del reverso con la misma calidad. Debe ser legible.</span>
+        <input name="cedula_back" type="file" accept="image/*" capture="environment" required>
+      </label>
+    </div>
   </div>
 
-  <label class="declaration"><input type="checkbox" name="truth_declaration" value="accepted" required> Declaro que los datos suministrados son reales, correctos y completos. Entiendo que esta informaci&oacute;n ser&aacute; revisada, verificada y valorada por el m&eacute;dico antes de cualquier valoraci&oacute;n remota o presencial.</label>
-  <button>Enviar formulario</button>
+  <div class="form-section" data-section="declaration">
+    <h2>Declaraci&oacute;n final</h2>
+    <label class="declaration"><input type="checkbox" name="truth_declaration" value="accepted" required> Declaro que los datos suministrados son reales, correctos y completos. Entiendo que esta informaci&oacute;n ser&aacute; revisada, verificada y valorada por el m&eacute;dico antes de cualquier valoraci&oacute;n remota o presencial.</label>
+    <div id="validationSummary" class="validation-summary hidden">
+      <p class="validation-title">Campos pendientes por completar:</p>
+      <ul id="validationList"></ul>
+    </div>
+    <button type="submit" id="submitBtn">Enviar formulario</button>
+  </div>
 </form>
 <script src="/static/app.js"></script>
 {% endblock %}

@@ -10,3 +10,8 @@ papelera/
 *.jpg
 *.jpeg
 *.png
+cookies.txt
+desktop.ini
+Thumbs.db
+.pytest_cache/
+.ruff_cache/
