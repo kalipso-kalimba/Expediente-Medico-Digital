@@ -14,10 +14,10 @@
     {% if APP_ENV == 'local' and user.role == 'admin' %}
     <p style="font-size:0.75em;color:rgba(255,255,255,.5);margin:0">Rol: {{ user.role }}</p>
     {% endif %}
-    <form method="post" action="/logout">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.1);box-shadow:none;">Salir</button>
-    </form>
+     <form method="post" action="/logout">
+       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+       <button type="submit">Salir</button>
+     </form>
   </div>
 </header>
 
@@ -33,23 +33,31 @@
 <div class="stats-grid">
   <div class="stat-card">
     <span class="stat-icon">🏥</span>
-    <p class="stat-value">{{ stats.total_patients }}</p>
-    <p class="stat-label">Total pacientes</p>
+    <div class="stat-body">
+      <p class="stat-value">{{ stats.total_patients }}</p>
+      <p class="stat-label">Total pacientes</p>
+    </div>
   </div>
   <div class="stat-card">
     <span class="stat-icon">📋</span>
-    <p class="stat-value">{{ stats.forms_today }}</p>
-    <p class="stat-label">Formularios hoy</p>
+    <div class="stat-body">
+      <p class="stat-value">{{ stats.forms_today }}</p>
+      <p class="stat-label">Formularios hoy</p>
+    </div>
   </div>
   <div class="stat-card">
     <span class="stat-icon">🔗</span>
-    <p class="stat-value">{{ stats.active_links }}</p>
-    <p class="stat-label">Enlaces activos</p>
+    <div class="stat-body">
+      <p class="stat-value">{{ stats.active_links }}</p>
+      <p class="stat-label">Enlaces activos</p>
+    </div>
   </div>
   <div class="stat-card">
     <span class="stat-icon">📝</span>
-    <p class="stat-value">{{ stats.pending_drafts }}</p>
-    <p class="stat-label">Borradores pendientes</p>
+    <div class="stat-body">
+      <p class="stat-value">{{ stats.pending_drafts }}</p>
+      <p class="stat-label">Borradores pendientes</p>
+    </div>
   </div>
 </div>
 
@@ -64,7 +72,7 @@
     </form>
     <form method="post" action="/doctor/forms/in-person">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button style="background:#526170;box-shadow:none;">Llenar formulario presencial</button>
+      <button class="secondary">Llenar formulario presencial</button>
     </form>
   </div>
 </section>
@@ -89,7 +97,7 @@
         <td><small>{{ draft.draft_identification }}</small></td>
         <td>{{ draft.created_at[:16].replace('T', ' ') }}</td>
         <td>{{ (draft.updated_at or draft.created_at)[:16].replace('T', ' ') }}</td>
-        <td><span class="status" style="background:#fff3cd;color:#856404;">Incompleto</span></td>
+        <td><span class="status status-draft">Incompleto</span></td>
         {% if user.role == 'admin' %}<td><small>{{ draft.doctor_username or 'Admin' }}</small></td>{% endif %}
         <td class="actions">
           <a class="buttonlink" href="/patient/{{ draft.token }}?mode=in_person">Continuar formulario</a>
@@ -114,7 +122,7 @@
         {% for link in links %}
         <tr>
           <td><a href="/patient/{{ link.token }}">{{ base_url }}/patient/{{ link.token }}</a></td>
-          <td>{% if link.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
+          <td>{% if link.source == 'in_person' %}<span class="badge badge-presencial">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
           <td>{{ link.created_at[:16].replace('T', ' ') }}</td>
           <td>{{ link.expires_at[:10] }}</td>
           <td><span class="status">{{ link.status_es }}</span></td>
@@ -143,7 +151,7 @@
   <div class="card">
     <div class="card-header">
       <h2>Formularios completados hoy</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="actions">
         <a class="buttonlink small" href="/doctor/patients/export">Exportar pacientes CSV</a>
         <a class="buttonlink small" href="/doctor/forms/completed/export">Exportar formularios CSV</a>
       </div>
@@ -154,7 +162,7 @@
         {% for item in encounters %}
         <tr>
           <td>{{ item.full_name }}<br><small>{{ item.identification }}</small></td>
-          <td>{% if item.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
+          <td>{% if item.source == 'in_person' %}<span class="badge badge-presencial">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
           <td>{{ item.created_at[:16].replace('T', ' ') }}</td>
           <td>PDF generado</td>
           <td>Frontal y trasera cargadas</td>
@@ -187,7 +195,7 @@
       <div class="timeline-item">
         <div class="time">{{ act.created_at[:16].replace('T', ' ') }}</div>
         <div class="desc">
-          {% if act.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}
+          {% if act.source == 'in_person' %}<span class="badge badge-presencial">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}
           {{ act.full_name }}
         </div>
         <div class="detail">{{ act.identification }}{% if user.role == 'admin' and act.doctor_username %} &mdash; {{ act.doctor_username }}{% endif %}</div>

@@ -15,10 +15,10 @@
 </nav>
 
 <section class="card">
-  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+  <div class="actions" style="margin-bottom:12px;">
     <a class="buttonlink small" href="/doctor/forms/completed/export">Exportar CSV</a>
   </div>
-  <form method="get" action="/doctor/forms/completed" class="searchbar" style="grid-template-columns:1fr 1fr 1fr auto auto;">
+  <form method="get" action="/doctor/forms/completed" class="filter-form">
     <label>Nombre<input name="q" value="{{ q }}" placeholder="Buscar por nombre"></label>
     <label>Identificaci&oacute;n<input name="ident" value="{{ ident }}" placeholder="C&eacute;dula o DIMEX"></label>
     <label>Origen<select name="source">
@@ -51,7 +51,7 @@
         <td>{{ f.full_name }}</td>
         <td><small>{{ f.identification }}</small></td>
         <td>{{ f.created_at[:16].replace('T', ' ') }}</td>
-        <td>{% if f.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
+        <td>{% if f.source == 'in_person' %}<span class="badge badge-presencial">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
         <td><span class="status">Completado</span></td>
         {% if user.role == 'admin' %}<td><small>{{ f.doctor_full_name or f.doctor_username or 'Admin' }}</small></td>{% endif %}
         <td class="actions">
@@ -75,9 +75,9 @@
 </section>
 
 {% if total_pages > 1 %}
-<section class="card" style="display:flex;justify-content:space-between;align-items:center;">
+<section class="card pagination">
   <p class="muted">P&aacute;gina {{ page }} de {{ total_pages }} ({{ total }} resultados)</p>
-  <div style="display:flex;gap:8px;">
+  <div class="pagination-actions">
     {% if page > 1 %}
     <a class="buttonlink" href="?page={{ page - 1 }}&q={{ q }}&ident={{ ident }}&date_from={{ date_from }}&date_to={{ date_to }}&source={{ source }}">Anterior</a>
     {% endif %}
