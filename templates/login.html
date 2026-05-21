@@ -1,15 +1,17 @@
 {% extends "base.html" %}
-{% block content %}
-<section class="card narrow">
+{% block body_attrs %}class="login-page"{% endblock %}
+{% block body_content %}
+<div class="login-card">
+  <div class="login-logo"><span class="icon">⚕️</span></div>
   <h1>Expediente Médico Digital</h1>
-  <p class="muted">Ingrese al panel medico para generar enlaces y revisar documentos.</p>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  {% if msg == 'password_changed' %}<p class="success">Contrase&ntilde;a actualizada correctamente. Inicie sesi&oacute;n nuevamente.</p>{% endif %}
+  <p class="subtitle">Acceda al panel médico para gestionar pacientes y documentos</p>
+  {% if error %}<p class="error" style="text-align:center;margin-bottom:16px;color:#dc2626;">{{ error }}</p>{% endif %}
+  {% if msg == 'password_changed' %}<p class="success" style="text-align:center;margin-bottom:16px;">Contrase&ntilde;a actualizada correctamente. Inicie sesi&oacute;n nuevamente.</p>{% endif %}
   <form method="post" action="/login" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Usuario<input name="username" required autocomplete="username"></label>
-    <label>Contrasena<input name="password" type="password" required autocomplete="current-password"></label>
-    <button>Ingresar</button>
+    <label>Usuario<input name="username" required autocomplete="username" placeholder="Ingrese su usuario"></label>
+    <label>Contrase&ntilde;a<input name="password" type="password" required autocomplete="current-password" placeholder="Ingrese su contrase&ntilde;a"></label>
+    <button>Ingresar al sistema</button>
   </form>
-</section>
+</div>
 {% endblock %}
