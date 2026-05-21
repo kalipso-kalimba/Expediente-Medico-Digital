@@ -2,44 +2,110 @@
 {% block content %}
 <header class="topbar">
   <div>
-    <h1>Expediente Médico Digital</h1>
+    <h1>Expediente M&eacute;dico Digital</h1>
     <p class="muted">Bienvenido, {{ user.full_name or user.username }} {% if user.role == 'admin' %}<span class="badge">Admin</span>{% endif %}</p>
   </div>
-  <a class="buttonlink secondary" href="/doctor/change-password">Cambiar contrase&ntilde;a</a>
-  {% if user.role == 'admin' %}
-  <a class="buttonlink secondary" href="/doctor/users">Administrar m&eacute;dicos</a>
-  {% endif %}
-  {% if APP_ENV == 'local' and user.role == 'admin' %}
-  <p style="font-size:0.8em;color:#888;margin:0">Rol actual: {{ user.role }}</p>
-  {% endif %}
-  <form method="post" action="/logout">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="secondary">Salir</button>
-  </form>
+  <div class="topbar-actions">
+    <button type="button" class="theme-toggle" data-theme-toggle>Modo oscuro</button>
+    <a class="buttonlink" href="/doctor/change-password">Cambiar contrase&ntilde;a</a>
+    {% if user.role == 'admin' %}
+    <a class="buttonlink" href="/doctor/users">Administrar m&eacute;dicos</a>
+    {% endif %}
+    {% if APP_ENV == 'local' and user.role == 'admin' %}
+    <p style="font-size:0.75em;color:rgba(255,255,255,.5);margin:0">Rol: {{ user.role }}</p>
+    {% endif %}
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.1);box-shadow:none;">Salir</button>
+    </form>
+  </div>
 </header>
 
-{% if success_message %}<p class="success">{{ success_message }}</p>{% endif %}
+{% if success_message %}
+<span data-toast="{{ success_message }}" data-toast-type="success"></span>
+{% endif %}
 
 <nav class="tabs">
-  <a class="buttonlink" href="/doctor">Panel principal</a>
+  <a class="buttonlink active" href="/doctor">Panel principal</a>
   <a class="buttonlink" href="/doctor/patients/search">Consultar paciente</a>
 </nav>
 
+<div class="stats-grid">
+  <div class="stat-card">
+    <span class="stat-icon">🏥</span>
+    <p class="stat-value">{{ stats.total_patients }}</p>
+    <p class="stat-label">Total pacientes</p>
+  </div>
+  <div class="stat-card">
+    <span class="stat-icon">📋</span>
+    <p class="stat-value">{{ stats.forms_today }}</p>
+    <p class="stat-label">Formularios hoy</p>
+  </div>
+  <div class="stat-card">
+    <span class="stat-icon">🔗</span>
+    <p class="stat-value">{{ stats.active_links }}</p>
+    <p class="stat-label">Enlaces activos</p>
+  </div>
+  <div class="stat-card">
+    <span class="stat-icon">📝</span>
+    <p class="stat-value">{{ stats.pending_drafts }}</p>
+    <p class="stat-label">Borradores pendientes</p>
+  </div>
+</div>
+
 <section class="card">
-  <h2>Formulario para paciente</h2>
-  <div class="grid two" style="grid-template-columns: 1fr 1fr;">
+  <div class="card-header">
+    <h2>Formulario para paciente</h2>
+  </div>
+  <div class="grid two">
     <form method="post" action="/doctor/links">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button>Generar enlace para enviar</button>
     </form>
     <form method="post" action="/doctor/forms/in-person">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="secondary">Llenar formulario presencial</button>
+      <button style="background:#526170;box-shadow:none;">Llenar formulario presencial</button>
     </form>
   </div>
 </section>
 
-<section class="grid">
+{% if drafts %}
+<section class="card">
+  <h2>Formularios presenciales incompletos</h2>
+  <div class="tablewrap">
+    <table>
+      <tr>
+        <th>Paciente</th>
+        <th>Identificaci&oacute;n</th>
+        <th>Iniciado</th>
+        <th>&Uacute;ltima actualizaci&oacute;n</th>
+        <th>Estado</th>
+        {% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}
+        <th>Acciones</th>
+      </tr>
+      {% for draft in drafts %}
+      <tr>
+        <td>{{ draft.draft_name }}</td>
+        <td><small>{{ draft.draft_identification }}</small></td>
+        <td>{{ draft.created_at[:16].replace('T', ' ') }}</td>
+        <td>{{ (draft.updated_at or draft.created_at)[:16].replace('T', ' ') }}</td>
+        <td><span class="status" style="background:#fff3cd;color:#856404;">Incompleto</span></td>
+        {% if user.role == 'admin' %}<td><small>{{ draft.doctor_username or 'Admin' }}</small></td>{% endif %}
+        <td class="actions">
+          <a class="buttonlink" href="/patient/{{ draft.token }}?mode=in_person">Continuar formulario</a>
+          <form method="post" action="/doctor/forms/drafts/{{ draft.token }}/delete" class="inline-form" data-confirm="&iquest;Desea borrar este formulario incompleto? Esta acci&oacute;n solo eliminar&aacute; el borrador y no afectar&aacute; formularios completados.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="small danger" type="submit">Borrar incompleto</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="grid two">
   <div class="card">
     <h2>Enlaces recientes</h2>
     <div class="tablewrap">
@@ -47,7 +113,7 @@
         <tr><th>Enlace</th><th>Tipo</th><th>Creado</th><th>Vence</th><th>Estado</th><th>Completado</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
         {% for link in links %}
         <tr>
-          <td><a href="/patient/{{ link.token }}" class="copy-source">{{ base_url }}/patient/{{ link.token }}</a></td>
+          <td><a href="/patient/{{ link.token }}">{{ base_url }}/patient/{{ link.token }}</a></td>
           <td>{% if link.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
           <td>{{ link.created_at[:16].replace('T', ' ') }}</td>
           <td>{{ link.expires_at[:10] }}</td>
@@ -75,7 +141,13 @@
   </div>
 
   <div class="card">
-    <h2>Formularios completados hoy</h2>
+    <div class="card-header">
+      <h2>Formularios completados hoy</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a class="buttonlink small" href="/doctor/patients/export">Exportar pacientes CSV</a>
+        <a class="buttonlink small" href="/doctor/forms/completed/export">Exportar formularios CSV</a>
+      </div>
+    </div>
     <div class="tablewrap">
       <table>
         <tr><th>Paciente</th><th>Tipo</th><th>Completado</th><th>Documento</th><th>Fotografias</th>{% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}<th>Acciones</th></tr>
@@ -105,5 +177,26 @@
     </div>
   </div>
 </section>
-<script src="/static/app.js"></script>
+
+<section class="grid two">
+  <div class="card">
+    <h2>Actividad reciente</h2>
+    {% if recent_activity %}
+    <div class="timeline">
+      {% for act in recent_activity %}
+      <div class="timeline-item">
+        <div class="time">{{ act.created_at[:16].replace('T', ' ') }}</div>
+        <div class="desc">
+          {% if act.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}
+          {{ act.full_name }}
+        </div>
+        <div class="detail">{{ act.identification }}{% if user.role == 'admin' and act.doctor_username %} &mdash; {{ act.doctor_username }}{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No hay actividad reciente.</p>
+    {% endif %}
+  </div>
+</section>
 {% endblock %}

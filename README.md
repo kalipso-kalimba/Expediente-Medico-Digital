@@ -132,10 +132,113 @@ storage/              → Almacenamiento temporal (runtime)
 Expediente de pacientes/ → PDFs e imágenes de pacientes
 ```
 
+## Herramientas de desarrollo
+
+```bash
+# Instalar dependencias de desarrollo
+pip install -r requirements-dev.txt
+
+# Linter y formateador
+ruff check .
+ruff format .
+
+# Pruebas
+pytest -v
+pytest tests/test_minimal.py -v
+python tests/test_comprehensive.py
+
+# Seguridad
+bandit -r app
+pip-audit -r requirements.txt
+
+# Pre-commit hooks (una vez)
+pre-commit install
+pre-commit run --all-files
+
+# Herramientas internas de revisión
+python tools/check_db.py
+python tools/check_db.py --fix
+python tools/check_admin.py
+python tools/check_admin.py --fix
+python tools/check_permissions.py
+python tools/smoke_test.py
+
+# Limpieza de archivos temporales
+python tools/clean_temp.py --dry-run
+python tools/clean_temp.py --execute
+```
+
 ## Dependencias
+
+### Producción (requirements.txt)
 
 - FastAPI
 - Uvicorn
 - Jinja2
 - python-multipart
 - ReportLab
+- passlib[bcrypt]
+- bcrypt
+
+### Desarrollo (requirements-dev.txt)
+
+- ruff (linter/formateador)
+- pytest + httpx (pruebas)
+- pre-commit (hooks)
+- bandit (seguridad)
+- pip-audit (vulnerabilidades)
+
+## Almacenamiento privado en NAS
+
+El sistema puede usar un **NAS Synology** como almacenamiento privado de archivos generados.
+
+### ¿Qué se almacena en el NAS?
+
+- PDFs generados
+- Fotos de cédula/DIMEX (frontales y traseras)
+- Carpetas de expedientes por atención
+- Formularios presenciales incompletos
+- Respaldos y archivos temporales
+
+### ¿Qué NO se almacena en el NAS?
+
+- Código fuente (sigue en GitHub)
+- Git ni repositorios
+- requirements.txt ni configuraciones de Render
+- Credenciales ni .env
+- Claves secretas
+
+### Configuración
+
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `STORAGE_BACKEND` | Backend de almacenamiento usar `local_path` | `local_path` |
+| `STORAGE_ROOT` | Ruta a la carpeta "Expediente Medico Digital" del usuario OpenCode en el NAS (ajustar a su entorno; no usar esta ruta literalmente) | `/mnt/nas/Expediente Medico Digital` |
+| `PATIENT_FILES_ROOT` | Nombre de la carpeta raíz de expedientes | `Expediente de pacientes` |
+
+### Funcionamiento
+
+1. El médico usa la aplicación normalmente (sesión, permisos, formularios)
+2. Los archivos se guardan automáticamente en la carpeta del NAS configurada en `STORAGE_ROOT`
+3. La base de datos guarda rutas **relativas**, no absolutas
+4. El médico ve/descarga archivos desde las rutas de la aplicación (`/doctor/encounters/{id}/pdf`)
+5. **No hay enlaces directos al NAS** visibles para el usuario
+6. El administrador ve todos los archivos; cada médico solo ve los suyos
+7. GitHub solo contiene el código — los archivos generados no se suben al repositorio
+
+### Estructura de carpetas en el NAS
+
+```
+Expediente Medico Digital/
+├── Expediente de pacientes/
+│   └── Médico - {usuario}/
+│       └── {Paciente} - {identificación}/
+│           └── {YYYY-MM-DD} - {HH-MM} - Atención/
+│               ├── formulario.pdf
+│               ├── cedula-frontal.jpg
+│               └── cedula-trasera.jpg
+├── formularios_incompletos/
+├── backups/
+├── logs/
+└── tmp/
+```

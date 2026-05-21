@@ -1,4 +1,12 @@
-import requests, re, sys, time
+import re
+import time
+
+import requests
+
+if __name__ != "__main__":
+    import pytest
+
+    pytest.skip("script-style smoke test; run with python tests/test_suite.py", allow_module_level=True)
 
 BASE = "http://127.0.0.1:8765"
 s = requests.Session()
@@ -11,9 +19,7 @@ print(f"Health: {r.status_code}")
 # Login page
 r = s.get(f"{BASE}/")
 csrf = re.search(r'name="csrf_token"\s+value="([^"]+)"', r.text).group(1)
-r = s.post(f"{BASE}/login",
-    data={"username": "doctor", "password": "test123", "csrf_token": csrf},
-    allow_redirects=False)
+r = s.post(f"{BASE}/login", data={"username": "doctor", "password": "test123", "csrf_token": csrf}, allow_redirects=False)
 print(f"Login: {r.status_code}")
 
 # Doctor panel
@@ -27,7 +33,7 @@ print(f"Link created: {r.status_code}")
 
 # Get token
 r = s.get(f"{BASE}/doctor")
-tokens = re.findall(r'/patient/([A-Za-z0-9_-]+)', r.text)
+tokens = re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text)
 print(f"Token: {tokens[0] if tokens else 'NONE'}")
 
 token = tokens[0]
@@ -47,7 +53,7 @@ data = {
     "csrf_token": csrf,
     "nationality": "Costarricense",
     "id_type": "cedula",
-    "identification": f"1-2345-6789",
+    "identification": "1-2345-6789",
     "full_name": f"Test Paciente {ts}",
     "whatsapp": "88888888",
     "email": f"test{ts}@test.com",
@@ -88,7 +94,7 @@ print(f"Submit form: {r.status_code}, Location: {r.headers.get('Location', '')}"
 # Check doctor panel for encounter
 r = s.get(f"{BASE}/doctor")
 print(f"After submit - panel: {r.status_code}")
-encounter_match = re.findall(r'/doctor/encounters/(\d+)', r.text)
+encounter_match = re.findall(r"/doctor/encounters/(\d+)", r.text)
 print(f"Encounters found: {encounter_match}")
 
 # Get encounter detail
@@ -109,15 +115,14 @@ if encounter_match:
 
     # Test PDF
     r = s.get(f"{BASE}/doctor/encounters/{eid}/pdf")
-    print(f"PDF download: {r.status_code}, Content-Type: {r.headers.get('Content-Type','')}")
+    print(f"PDF download: {r.status_code}, Content-Type: {r.headers.get('Content-Type', '')}")
     if r.status_code == 200:
         print(f"  PDF size: {len(r.content)} bytes")
 
     # Test delete
     r = s.get(f"{BASE}/doctor/encounters/{eid}")
     csrf = re.search(r'name="csrf_token"\s+value="([^"]+)"', r.text).group(1)
-    r = s.post(f"{BASE}/doctor/encounters/{eid}/delete",
-        data={"csrf_token": csrf}, allow_redirects=False)
+    r = s.post(f"{BASE}/doctor/encounters/{eid}/delete", data={"csrf_token": csrf}, allow_redirects=False)
     print(f"Delete encounter: {r.status_code}")
 
     # Verify deleted

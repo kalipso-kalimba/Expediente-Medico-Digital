@@ -151,12 +151,178 @@
   <h2>Fotografias del documento</h2>
   <p class="muted">Tome fotos claras, legibles, sin reflejos ni cortes. Las imagenes no se publican.</p>
   <div class="grid two">
-    <label>Frontal de cedula o DIMEX<input name="cedula_front" type="file" accept="image/*" capture="environment" required></label>
-    <label>Trasera de cedula o DIMEX<input name="cedula_back" type="file" accept="image/*" capture="environment" required></label>
+    <label>Frontal de cedula o DIMEX<input name="cedula_front" id="cedulaFront" type="file" accept="image/*" capture="environment" required></label>
+    <label>Trasera de cedula o DIMEX<input name="cedula_back" id="cedulaBack" type="file" accept="image/*" capture="environment" required></label>
   </div>
 
   <label class="declaration"><input type="checkbox" name="truth_declaration" value="accepted" required> Declaro que los datos suministrados son reales, correctos y completos. Entiendo que esta informaci&oacute;n ser&aacute; revisada, verificada y valorada por el m&eacute;dico antes de cualquier valoraci&oacute;n remota o presencial.</label>
+
+  {% if is_in_person and is_authenticated %}
+  <div class="grid two" style="grid-template-columns: 1fr 1fr; margin-top: 12px;">
+    <button type="button" class="secondary" id="saveDraftBtn" onclick="saveDraft()">Guardar incompleto y volver al panel</button>
+    <button type="button" class="secondary" id="backToPanelBtn" onclick="backToPanel()">Volver al panel sin guardar</button>
+  </div>
+  {% endif %}
+
   <button>Enviar formulario</button>
 </form>
-<script src="/static/app.js"></script>
+
+{% if is_in_person and is_authenticated %}
+<form method="post" action="/patient/{{ token }}/save-draft" id="draftForm" style="display:none;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="nationality" id="draft_nationality">
+  <input type="hidden" name="id_type" id="draft_id_type">
+  <input type="hidden" name="identification" id="draft_identification">
+  <input type="hidden" name="full_name" id="draft_full_name">
+  <input type="hidden" name="whatsapp" id="draft_whatsapp">
+  <input type="hidden" name="email" id="draft_email">
+  <input type="hidden" name="age" id="draft_age">
+  <input type="hidden" name="birth_date" id="draft_birth_date">
+  <input type="hidden" name="civil_status" id="draft_civil_status">
+  <input type="hidden" name="profession" id="draft_profession">
+  <input type="hidden" name="province" id="draft_province">
+  <input type="hidden" name="province_code" id="draft_province_code">
+  <input type="hidden" name="canton" id="draft_canton">
+  <input type="hidden" name="canton_code" id="draft_canton_code">
+  <input type="hidden" name="district_or_locality" id="draft_district_or_locality">
+  <input type="hidden" name="district_or_locality_code" id="draft_district_or_locality_code">
+  <input type="hidden" name="exact_address" id="draft_exact_address">
+  <input type="hidden" name="organ_donor" id="draft_organ_donor">
+  <input type="hidden" name="has_illness" id="draft_has_illness">
+  <input type="hidden" name="illnesses" id="draft_illnesses">
+  <input type="hidden" name="treatments" id="draft_treatments">
+  <input type="hidden" name="smokes" id="draft_smokes">
+  <input type="hidden" name="smoke_frequency" id="draft_smoke_frequency">
+  <input type="hidden" name="smoke_product" id="draft_smoke_product">
+  <input type="hidden" name="drinks" id="draft_drinks">
+  <input type="hidden" name="drink_frequency" id="draft_drink_frequency">
+  <input type="hidden" name="uses_drugs" id="draft_uses_drugs">
+  <input type="hidden" name="drug_type" id="draft_drug_type">
+  <input type="hidden" name="drug_frequency" id="draft_drug_frequency">
+  <input type="hidden" name="weight" id="draft_weight">
+  <input type="hidden" name="height" id="draft_height">
+  <input type="hidden" name="uses_glasses" id="draft_uses_glasses">
+  <input type="hidden" name="glasses_use" id="draft_glasses_use">
+  <input type="hidden" name="laterality" id="draft_laterality">
+  <input type="hidden" name="truth_declaration" id="draft_truth_declaration">
+</form>
+
+<script>
+var draftPayload = {{ draft_payload | tojson | safe }};
+
+function loadDraft() {
+  if (!draftPayload) return;
+  var sel = document.getElementById('nationality');
+  if (draftPayload.nationality) { sel.value = draftPayload.nationality; }
+  sel = document.getElementById('idType');
+  if (draftPayload.id_type) { sel.value = draftPayload.id_type; }
+  ['identification','fullName','whatsapp','email','age','birth_date','civil_status','profession'].forEach(function(id) {
+    var key = id.replace(/([A-Z])/g, function(m){return '_'+m.toLowerCase();}).replace(/^_/,'');
+    var el = document.getElementById(id);
+    if (el && draftPayload[key]) { el.value = draftPayload[key]; }
+  });
+  // Special mappings for fields where id != name
+  var fieldMap = {
+    'fullName': 'full_name', 'whatsapp': 'whatsapp', 'email': 'email', 'age': 'age',
+    'birth_date': 'birth_date', 'civil_status': 'civil_status', 'profession': 'profession',
+    'illnesses': 'illnesses', 'treatments': 'treatments',
+    'smoke_frequency': 'smoke_frequency', 'smoke_product': 'smoke_product',
+    'drink_frequency': 'drink_frequency', 'drug_type': 'drug_type', 'drug_frequency': 'drug_frequency',
+    'weight': 'weight', 'height': 'height', 'glasses_use': 'glasses_use',
+    'laterality': 'laterality', 'exact_address': 'exact_address',
+  };
+  for (var id in fieldMap) {
+    var el = document.getElementById(id);
+    if (el && draftPayload[fieldMap[id]]) { el.value = draftPayload[fieldMap[id]]; }
+  }
+  // Districts/locality
+  if (draftPayload.district_or_locality) {
+    var selLoc = document.getElementById('localitySelect');
+    var inpLoc = document.getElementById('localityInput');
+    if (selLoc && inpLoc) {
+      selLoc.value = draftPayload.district_or_locality;
+      inpLoc.value = draftPayload.district_or_locality;
+    }
+  }
+  // Radio buttons
+  var radioGroups = ['organ_donor','has_illness','smokes','drinks','uses_drugs','uses_glasses'];
+  radioGroups.forEach(function(group) {
+    if (draftPayload[group]) {
+      var radios = document.querySelectorAll('input[name="'+group+'"]');
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].value === draftPayload[group]) { radios[i].checked = true; }
+      }
+    }
+  });
+  // Checkboxes (license_types)
+  if (draftPayload.license_types && Array.isArray(draftPayload.license_types)) {
+    draftPayload.license_types.forEach(function(val) {
+      var cb = document.querySelector('input[name="license_types"][value="'+val+'"]');
+      if (cb) cb.checked = true;
+    });
+  }
+  // Truth declaration
+  if (draftPayload.truth_declaration === 'accepted') {
+    var td = document.querySelector('input[name="truth_declaration"]');
+    if (td) td.checked = true;
+  }
+}
+loadDraft();
+
+function collectForm() {
+  var data = {};
+  var form = document.getElementById('patientForm');
+  var els = form.querySelectorAll('input, select, textarea');
+  for (var i = 0; i < els.length; i++) {
+    if (els[i].name && els[i].type !== 'file' && els[i].type !== 'submit') {
+      if (els[i].type === 'checkbox') {
+        if (!data[els[i].name]) data[els[i].name] = [];
+        if (els[i].checked) data[els[i].name].push(els[i].value);
+      } else if (els[i].type === 'radio') {
+        if (els[i].checked) data[els[i].name] = els[i].value;
+      } else {
+        data[els[i].name] = els[i].value;
+      }
+    }
+  }
+  return data;
+}
+
+function saveDraft() {
+  var data = collectForm();
+  var df = document.getElementById('draftForm');
+  for (var key in data) {
+    var id = 'draft_' + key;
+    var el = document.getElementById(id);
+    if (el) {
+      if (Array.isArray(data[key])) {
+        el.value = data[key].join(',');
+      } else {
+        el.value = data[key] || '';
+      }
+    }
+  }
+  df.submit();
+}
+
+function backToPanel() {
+  var data = collectForm();
+  var hasData = false;
+  for (var key in data) {
+    if (Array.isArray(data[key])) {
+      if (data[key].length > 0) { hasData = true; break; }
+    } else if (data[key]) {
+      hasData = true; break;
+    }
+  }
+  if (hasData) {
+    if (!confirm('Hay datos sin guardar. Si vuelve al panel sin guardar, se perderan los cambios.')) {
+      return;
+    }
+  }
+  window.location.href = '/doctor';
+}
+</script>
+{% endif %}
+
 {% endblock %}

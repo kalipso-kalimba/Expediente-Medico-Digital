@@ -2,29 +2,35 @@
 Full system test: encounter structure, PDF, ID photos, patient search
 """
 
-import requests, re, time, sys
+import re
+import sys
+import time
 from pathlib import Path
+
+import requests
 
 BASE = "http://127.0.0.1:8765"
 EXP_DIR = Path("G:/Mi unidad/Expediente Médico Digital") / "Expediente de pacientes"
 s = requests.Session()
 results = []
 
+
 def check(desc, ok):
     results.append((desc, ok))
     print(f"  {'PASS' if ok else 'FAIL'}: {desc}")
+
 
 def link_csrf(html):
     m = re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
     return m.group(1) if m else ""
 
+
 # Login
 r = s.get(f"{BASE}/")
 csrf = link_csrf(r.text)
-s.post(f"{BASE}/login",
-    data={"username": "doctor", "password": "test123", "csrf_token": csrf},
-    allow_redirects=False)
+s.post(f"{BASE}/login", data={"username": "doctor", "password": "test123", "csrf_token": csrf}, allow_redirects=False)
 check("1. Login", True)
+
 
 # Create two patients with multiple encounters
 def make_encounter(ident, name, suffix):
@@ -34,7 +40,8 @@ def make_encounter(ident, name, suffix):
     s.post(f"{BASE}/doctor/links", data={"csrf_token": csrf}, allow_redirects=False)
     r = s.get(f"{BASE}/doctor")
     toks = re.findall(r"/patient/([A-Za-z0-9_-]+)", r.text)
-    if not toks: return None, "no token"
+    if not toks:
+        return None, "no token"
     tok = toks[0]
     r = s.get(f"{BASE}/patient/{tok}")
     csrf = link_csrf(r.text)
@@ -43,19 +50,42 @@ def make_encounter(ident, name, suffix):
         "cedula_back": ("b.jpg", b"BACK-" + ts.encode(), "image/jpeg"),
     }
     data = {
-        "csrf_token": csrf, "nationality": "Costarricense", "id_type": "cedula",
-        "identification": ident, "full_name": name,
-        "whatsapp": "88888888", "email": f"{ts}@t.com", "age": "30",
-        "birth_date": "1994-01-01", "civil_status": "Soltero(a)",
-        "profession": "Ing.", "province": "San Jos\u00e9", "province_code": "1",
-        "canton": "Central", "canton_code": "1",
-        "district_or_locality": "Carmen", "district_or_locality_code": "1",
-        "exact_address": "100 m sur", "organ_donor": "No", "has_illness": "No",
-        "illnesses": "", "treatments": "", "smokes": "No", "smoke_frequency": "",
-        "smoke_product": "", "drinks": "No", "drink_frequency": "",
-        "uses_drugs": "No", "drug_type": "", "drug_frequency": "",
-        "weight": "70", "height": "175", "uses_glasses": "No",
-        "glasses_use": "", "laterality": "Diestro(a)", "license_types": "",
+        "csrf_token": csrf,
+        "nationality": "Costarricense",
+        "id_type": "cedula",
+        "identification": ident,
+        "full_name": name,
+        "whatsapp": "88888888",
+        "email": f"{ts}@t.com",
+        "age": "30",
+        "birth_date": "1994-01-01",
+        "civil_status": "Soltero(a)",
+        "profession": "Ing.",
+        "province": "San Jos\u00e9",
+        "province_code": "1",
+        "canton": "Central",
+        "canton_code": "1",
+        "district_or_locality": "Carmen",
+        "district_or_locality_code": "1",
+        "exact_address": "100 m sur",
+        "organ_donor": "No",
+        "has_illness": "No",
+        "illnesses": "",
+        "treatments": "",
+        "smokes": "No",
+        "smoke_frequency": "",
+        "smoke_product": "",
+        "drinks": "No",
+        "drink_frequency": "",
+        "uses_drugs": "No",
+        "drug_type": "",
+        "drug_frequency": "",
+        "weight": "70",
+        "height": "175",
+        "uses_glasses": "No",
+        "glasses_use": "",
+        "laterality": "Diestro(a)",
+        "license_types": "",
         "truth_declaration": "accepted",
     }
     r = s.post(f"{BASE}/patient/{tok}/submit", data=data, files=files, allow_redirects=False)
@@ -63,11 +93,12 @@ def make_encounter(ident, name, suffix):
         return None, f"submit {r.status_code}"
     return tok, None
 
+
 ts = str(int(time.time()))
 id1 = f"1-{ts[-4:]}-{ts[-8:-4]}"
-id2 = f"1-{int(ts[-4:])+1}-{ts[-8:-4]}"
-name1 = f"Juan Carlos Perez Lopez"
-name2 = f"Maria Elena Rodriguez Sanchez"
+id2 = f"1-{int(ts[-4:]) + 1}-{ts[-8:-4]}"
+name1 = "Juan Carlos Perez Lopez"
+name2 = "Maria Elena Rodriguez Sanchez"
 
 tok1, e = make_encounter(id1, name1, "a")
 check("2. Paciente 1 creado", tok1 is not None)
@@ -111,8 +142,10 @@ check("18. Buscar sin resultados", False)
 check("19. Paciente no accede a busqueda", False)
 check("20. Panel principal solo muestra hoy", False)
 
+
 def search(q):
     return s.get(f"{BASE}/doctor/patients/search?query={requests.utils.quote(q)}")
+
 
 # cedula sin guiones
 raw_id = id1.replace("-", "")
@@ -159,8 +192,7 @@ all_ids = list(set(re.findall(r"/doctor/encounters/(\d+)", s.get(f"{BASE}/doctor
 del_id = all_ids[0]
 r = s.get(f"{BASE}/doctor/encounters/{del_id}")
 csrf = link_csrf(r.text)
-s.post(f"{BASE}/doctor/encounters/{del_id}/delete",
-    data={"csrf_token": csrf}, allow_redirects=False)
+s.post(f"{BASE}/doctor/encounters/{del_id}/delete", data={"csrf_token": csrf}, allow_redirects=False)
 pf1_encs_after = sorted([f for f in pf1.iterdir() if f.is_dir()]) if pf1 else []
 check("21. Delete solo borra 1 subcarpeta", len(pf1_encs_after) == before_count - 1)
 

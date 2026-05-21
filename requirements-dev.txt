@@ -1,0 +1,16 @@
+# Dependencias solo para desarrollo — no incluir en requirements.txt de producción
+# Instalar con: pip install -r requirements-dev.txt
+
+# Linter y formateador
+ruff>=0.8.0
+
+# Pruebas
+pytest>=8.0.0
+httpx>=0.28.0
+
+# Pre-commit hooks
+pre-commit>=4.0.0
+
+# Seguridad
+bandit>=1.8.0
+pip-audit>=2.7.0

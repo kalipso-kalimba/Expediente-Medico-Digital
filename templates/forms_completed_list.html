@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Formularios realizados</h1>
+    <p class="muted">Todos los formularios completados.</p>
+  </div>
+  <a class="buttonlink" href="/doctor">Volver al panel</a>
+</header>
+
+<nav class="tabs">
+  <a class="buttonlink" href="/doctor/patients/search">Buscar paciente</a>
+  <a class="buttonlink" href="/doctor/patients">Lista de pacientes</a>
+  <a class="buttonlink active" href="/doctor/forms/completed">Formularios realizados</a>
+</nav>
+
+<section class="card">
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+    <a class="buttonlink small" href="/doctor/forms/completed/export">Exportar CSV</a>
+  </div>
+  <form method="get" action="/doctor/forms/completed" class="searchbar" style="grid-template-columns:1fr 1fr 1fr auto auto;">
+    <label>Nombre<input name="q" value="{{ q }}" placeholder="Buscar por nombre"></label>
+    <label>Identificaci&oacute;n<input name="ident" value="{{ ident }}" placeholder="C&eacute;dula o DIMEX"></label>
+    <label>Origen<select name="source">
+      <option value="">Todos</option>
+      <option value="in_person"{% if source == 'in_person' %} selected{% endif %}>Presencial</option>
+      <option value="remote"{% if source == 'remote' %} selected{% endif %}>Enlace enviado</option>
+    </select></label>
+    <label>Desde<input name="date_from" type="date" value="{{ date_from }}"></label>
+    <label>Hasta<input name="date_to" type="date" value="{{ date_to }}"></label>
+    <button>Filtrar</button>
+  </form>
+</section>
+
+<section class="card">
+  {% if forms %}
+  <p class="muted" style="margin-bottom:12px;">{{ total }} formulario(s) encontrado(s).</p>
+  <div class="tablewrap">
+    <table>
+      <tr>
+        <th>Paciente</th>
+        <th>Identificaci&oacute;n</th>
+        <th>Fecha</th>
+        <th>Origen</th>
+        <th>Estado</th>
+        {% if user.role == 'admin' %}<th>M&eacute;dico</th>{% endif %}
+        <th>Acciones</th>
+      </tr>
+      {% for f in forms %}
+      <tr>
+        <td>{{ f.full_name }}</td>
+        <td><small>{{ f.identification }}</small></td>
+        <td>{{ f.created_at[:16].replace('T', ' ') }}</td>
+        <td>{% if f.source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
+        <td><span class="status">Completado</span></td>
+        {% if user.role == 'admin' %}<td><small>{{ f.doctor_full_name or f.doctor_username or 'Admin' }}</small></td>{% endif %}
+        <td class="actions">
+          <a class="buttonlink" href="/doctor/encounters/{{ f.id }}">Ver detalle</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ f.id }}/pdf">Descargar PDF</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ f.id }}/share">Compartir PDF</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ f.id }}/images/front">C&eacute;dula frontal</a>
+          <a class="buttonlink" href="/doctor/encounters/{{ f.id }}/images/back">C&eacute;dula trasera</a>
+          <form method="post" action="/doctor/encounters/{{ f.id }}/delete" class="inline-form" data-confirm="Esta seguro de que desea eliminar esta atencion? Esta accion eliminara el registro, el PDF y las fotografias asociadas a esta atencion. No se eliminaran otras atenciones del mismo paciente.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="small danger">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No hay formularios completados para mostrar.</p>
+  {% endif %}
+</section>
+
+{% if total_pages > 1 %}
+<section class="card" style="display:flex;justify-content:space-between;align-items:center;">
+  <p class="muted">P&aacute;gina {{ page }} de {{ total_pages }} ({{ total }} resultados)</p>
+  <div style="display:flex;gap:8px;">
+    {% if page > 1 %}
+    <a class="buttonlink" href="?page={{ page - 1 }}&q={{ q }}&ident={{ ident }}&date_from={{ date_from }}&date_to={{ date_to }}&source={{ source }}">Anterior</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a class="buttonlink" href="?page={{ page + 1 }}&q={{ q }}&ident={{ ident }}&date_from={{ date_from }}&date_to={{ date_to }}&source={{ source }}">Siguiente</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
