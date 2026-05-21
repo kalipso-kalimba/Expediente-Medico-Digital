@@ -15,10 +15,10 @@
 </nav>
 
 <section class="card">
-  <div class="actions" style="margin-bottom:12px;">
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
     <a class="buttonlink small" href="/doctor/patients/export">Exportar CSV</a>
   </div>
-  <form method="get" action="/doctor/patients" class="filter-form">
+  <form method="get" action="/doctor/patients" class="searchbar" style="grid-template-columns: 1fr 1fr 1fr auto auto;">
     <label>Nombre<input name="q" value="{{ q }}" placeholder="Buscar por nombre"></label>
     <label>Identificaci&oacute;n<input name="ident" value="{{ ident }}" placeholder="C&eacute;dula o DIMEX"></label>
     <label>Origen<select name="source">
@@ -56,7 +56,7 @@
         <td>{{ p.email or '-' }}</td>
         <td>{{ p.form_count }}</td>
         <td>{{ p.last_attention[:16].replace('T', ' ') if p.last_attention else '-' }}</td>
-        <td>{% if p.last_source == 'in_person' %}<span class="badge badge-presencial">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
+        <td>{% if p.last_source == 'in_person' %}<span class="badge" style="background:#526170">Presencial</span>{% else %}<span class="badge">Enviado</span>{% endif %}</td>
         {% if user.role == 'admin' %}<td><small>{{ doctor_map.get(p.doctor_id, 'Admin') }}</small></td>{% endif %}
         <td class="actions">
           {% if p.last_encounter_id %}
@@ -74,9 +74,9 @@
 </section>
 
 {% if total_pages > 1 %}
-<section class="card pagination">
+<section class="card" style="display:flex;justify-content:space-between;align-items:center;">
   <p class="muted">P&aacute;gina {{ page }} de {{ total_pages }} ({{ total }} resultados)</p>
-  <div class="pagination-actions">
+  <div style="display:flex;gap:8px;">
     {% if page > 1 %}
     <a class="buttonlink" href="?page={{ page - 1 }}&q={{ q }}&ident={{ ident }}&date_from={{ date_from }}&date_to={{ date_to }}&source={{ source }}">Anterior</a>
     {% endif %}
